@@ -14,5 +14,6 @@ mim-stanag4774 = { workspace = true }
 mim-stanag4778 = { workspace = true }
 mim-ztdf = { workspace = true }
 mim-dcs = { workspace = true }
+mim-policy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

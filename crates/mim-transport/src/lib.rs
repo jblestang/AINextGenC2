@@ -19,6 +19,7 @@ pub mod broker;
 pub mod error;
 pub mod message;
 pub mod rest;
+pub mod secured;
 
 pub use broker::ExchangeBroker;
 pub use error::{TransportError, TransportResult};
@@ -28,3 +29,4 @@ pub use message::{
     PutObjectResponse,
 };
 pub use rest::{paths, HttpMethod, RestRoute};
+pub use secured::SecuredExchangeBroker;

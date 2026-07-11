@@ -35,6 +35,7 @@ impl LabelingComplianceChecker {
             self.dimension_stanag4778(),
             self.dimension_ztdf(),
             self.dimension_dcs(),
+            self.dimension_policy_plane(),
             self.dimension_nato_policy(),
             self.dimension_assertion_binding(),
         ];
@@ -172,6 +173,76 @@ impl LabelingComplianceChecker {
         }
     }
 
+    fn dimension_policy_plane(&self) -> LabelingDimensionResult {
+        use mim_labeling::SecurityDomain;
+        use mim_policy::{
+            AccessOperation, PolicyAdministrationPoint, PolicyEnforcementPoint,
+            PolicyInformationPoint, SubjectAttributes,
+        };
+
+        let pap = PolicyAdministrationPoint::with_preset_high_to_low();
+        let pap_ok = !pap.store().cross_domain_policies().is_empty();
+        let pep = PolicyEnforcementPoint::new(
+            PolicyInformationPoint::new(),
+            mim_policy::PolicyDecisionPoint::new(pap.into_store()),
+        );
+        let source = SecurityDomain::new(
+            "DOMAIN-HIGH",
+            "High Side",
+            ClassificationLevel::Secret,
+        )
+        .with_releasable_to(vec!["USA".into(), "GBR".into(), "DEU".into()]);
+        let target = SecurityDomain::new(
+            "DOMAIN-LOW",
+            "Low Side",
+            ClassificationLevel::Restricted,
+        )
+        .with_releasable_to(vec!["USA".into(), "GBR".into()]);
+        let label = Self::sample_label();
+
+        let pip_ok = PolicyInformationPoint::new()
+            .access_context(
+                SubjectAttributes::new("operator", ClassificationLevel::Secret),
+                &label,
+                AccessOperation::Read,
+                &source,
+            )
+            .is_ok();
+        let pdp_ok = pep
+            .evaluate_cross_domain(
+                SubjectAttributes::new("guard", ClassificationLevel::Secret),
+                &label,
+                &source,
+                &target,
+            )
+            .map(|decision| decision.effect != mim_policy::PolicyEffect::Deny)
+            .unwrap_or(false);
+        let pep_ok = pep
+            .enforce_access(
+                SubjectAttributes::new("operator", ClassificationLevel::Secret),
+                &label,
+                AccessOperation::Read,
+                &source,
+            )
+            .is_ok();
+        let score = [pip_ok, pdp_ok, pep_ok, pap_ok]
+            .iter()
+            .filter(|ok| **ok)
+            .count() as f64
+            / 4.0;
+
+        LabelingDimensionResult {
+            dimension: LabelingDimension::PolicyPlane,
+            status: status_from_score(score, self.requirements.require_policy_plane),
+            score,
+            message: if score >= 1.0 {
+                "PIP, PAP/PRP, PDP, and PEP policy plane operational".into()
+            } else {
+                "Policy plane components incomplete".into()
+            },
+        }
+    }
+
     fn dimension_nato_policy(&self) -> LabelingDimensionResult {
         let policy = LabelPolicy::nato();
         let ok = policy.allows_classification(ClassificationLevel::Secret)
@@ -251,6 +322,6 @@ mod tests {
         let checker = LabelingComplianceChecker::with_defaults();
         let report = checker.evaluate();
         assert!(report.is_fully_compliant, "{report:?}");
-        assert_eq!(report.dimensions.len(), 6);
+        assert_eq!(report.dimensions.len(), 7);
     }
 }

@@ -19,6 +19,9 @@ pub enum TransportError {
     #[error("validation error: {0}")]
     Validation(String),
 
+    #[error("forbidden: {0}")]
+    Forbidden(String),
+
     #[error("unsupported operation: {0}")]
     Unsupported(String),
 }

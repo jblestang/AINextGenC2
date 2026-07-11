@@ -24,6 +24,7 @@ mim-labeling = { workspace = true }
 mim-labeling-compliance = { workspace = true }
 mim-adatp-conformance = { workspace = true }
 mim-transport = { workspace = true }
+mim-policy = { workspace = true }
 mim-dcs = { workspace = true }
 mim-stanag4774 = { workspace = true }
 serde = { workspace = true }
