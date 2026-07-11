@@ -4,6 +4,7 @@ use std::path::Path;
 
 use mim_compliance::{ComplianceChecker, ComplianceReport};
 use mim_core::MimResult;
+use mim_labeling_compliance::{LabelingComplianceChecker, LabelingComplianceReport};
 use mim_model::{MimManifest, ModelRegistry};
 use mim_runtime::{ValidationReport, Validator};
 
@@ -65,6 +66,11 @@ impl MimStack {
         let checker = ComplianceChecker::with_defaults();
         let validation = self.smoke_test_validator();
         checker.evaluate(&self.manifest, &self.registry, &validation)
+    }
+
+    pub fn labeling_compliance_report(&self) -> LabelingComplianceReport {
+        let _ = &self.registry;
+        LabelingComplianceChecker::with_defaults().evaluate()
     }
 }
 

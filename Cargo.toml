@@ -6,6 +6,12 @@ members = [
     "crates/mim-runtime",
     "crates/mim-compliance",
     "crates/mim-import",
+    "crates/mim-labeling",
+    "crates/mim-stanag4774",
+    "crates/mim-stanag4778",
+    "crates/mim-ztdf",
+    "crates/mim-dcs",
+    "crates/mim-labeling-compliance",
     "crates/ainextgenc2",
 ]
 default-members = ["crates/ainextgenc2"]
@@ -23,6 +29,12 @@ mim-model = { path = "crates/mim-model" }
 mim-runtime = { path = "crates/mim-runtime" }
 mim-compliance = { path = "crates/mim-compliance" }
 mim-import = { path = "crates/mim-import" }
+mim-labeling = { path = "crates/mim-labeling" }
+mim-stanag4774 = { path = "crates/mim-stanag4774" }
+mim-stanag4778 = { path = "crates/mim-stanag4778" }
+mim-ztdf = { path = "crates/mim-ztdf" }
+mim-dcs = { path = "crates/mim-dcs" }
+mim-labeling-compliance = { path = "crates/mim-labeling-compliance" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -31,6 +43,9 @@ uuid = { version = "=1.8.0", features = ["serde", "v4", "v5"] }
 chrono = { version = "0.4", features = ["serde"] }
 quick-xml = { version = "0.37", features = ["serialize"] }
 indexmap = { version = "=2.2.6", features = ["serde"] }
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
 
 [profile.release]
 lto = true

@@ -12,6 +12,12 @@ A zero-panic, `Result`-driven Rust workspace implementing the semantic foundatio
 | `mim-model` | Object/Action taxonomy, metadata, code lists, JSON manifest loader, model registry |
 | `mim-runtime` | Instances with OIDs, validation, JSON/XML serialization |
 | `mim-compliance` | Multi-dimensional compliance checker and reporting |
+| `mim-labeling` | Format-agnostic confidentiality labels, policies, security domains |
+| `mim-stanag4774` | STANAG 4774 (ADatP-4774) confidentiality metadata label codec |
+| `mim-stanag4778` | STANAG 4778 (ADatP-4778) metadata binding mechanism |
+| `mim-ztdf` | ZTDF / OpenTDF manifest packaging with NATO label assertions |
+| `mim-dcs` | Data-centric security cross-domain guard and transfer |
+| `mim-labeling-compliance` | STANAG 4774/4778, ZTDF, and DCS compliance checker |
 | `ainextgenc2` | Integration library and CLI |
 
 ### Zero-panic policy
@@ -23,13 +29,17 @@ A zero-panic, `Result`-driven Rust workspace implementing the semantic foundatio
 
 ### Compliance status
 
-Run the compliance report:
+Run the compliance report (MIM + labeling):
 
 ```bash
 cargo run -p ainextgenc2
+# labeling-only report:
+cargo run -p ainextgenc2 -- --labeling
 # or with a custom manifest:
 cargo run -p ainextgenc2 -- /path/to/mim-manifest.json
 ```
+
+Both MIM 5.1 and labeling (STANAG 4774/4778, ZTDF, DCS) must be fully compliant for exit code 0.
 
 The workspace loads `models/mim-full-5.1.json` when present (generated from JC3IEDM OWL + MIM core seed). Regenerate with:
 
@@ -87,6 +97,18 @@ let stack = MimStack::load()?;
 let output = AirDefenseRadarScenario::demo().run(&stack)?;
 println!("{}", output.exchange_json);
 ```
+
+### DCS cross-domain labeling
+
+Labels MIM exchanges with **STANAG 4774** confidentiality metadata, binds labels via **STANAG 4778** assertion profiles, packages in **ZTDF** manifests, and transfers across security domains through a DCS guard (allow / deny / downgrade):
+
+```bash
+cargo run --example dcs_cross_domain
+```
+
+The demo downgrades a SECRET/REL USA,GBR radar exchange from a high-side domain to RESTRICTED on the low side, emitting STANAG 4774 XML and a ZTDF manifest.
+
+> **Note:** NATO standard references are STANAG **4774** (label syntax) and STANAG **4778** (binding). These are commonly grouped with ZTDF (ACP-240 / OpenTDF) for DCS Level 1–3 interoperability.
 
 ## License
 
