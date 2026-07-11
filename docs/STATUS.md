@@ -131,6 +131,46 @@ The DCS cross-domain scenario signs audit records, persists envelopes when confi
 
 ---
 
+## Limitations
+
+Conformance suites report **100%**; the items below are **operational and architectural gaps** that do not fail automated compliance today.
+
+### By deployment tier
+
+| Tier | Blockers |
+|------|----------|
+| **Lab / development** | None — full stack runs with conformance PKI |
+| **Coalition exercise** | Production PKI not default; HTTP server uses conformance trust store; no live HTTPS E2E in CI; no SAR/LOC/dual-broker scenarios; SIEM forward is best-effort |
+| **Classified accredited** | FIPS-validated module not default CI path; RSA outside FIPS boundary; no HSM/PKCS#11; no WORM audit; no accredited guard; no full CMBAC; no LDAP/SAML PIP |
+
+### By subsystem
+
+| Subsystem | Limitation | Impact |
+|-----------|------------|--------|
+| **STANAG 4774** | National extensions and compound category rules not fully modeled; classification values not XSD-enforced | Cannot represent all national label profiles |
+| **STANAG 4778** | Non-assertion bindings lack NMBS by default; SMTP binding library-only; HTTPS server exposes PUT only | Cross-domain still requires assertion binding (by design) |
+| **ZTDF / ACP-240** | Static demo access policy; no KAS protocol; no ABAC at decrypt; OpenTDF manifest subset | CEK unwrap is in-process; holder can decrypt without attribute check |
+| **SPIF** | Parser subset; no signed SPIF distribution (NMRR workflow) | Policy admin is file-based, not centrally signed |
+| **Policy plane** | PIP is caller-supplied (no LDAP/SAML); no full CMBAC matrix; no XACML obligations | Clearance comes from application, not enterprise IdP |
+| **DCS** | Conformance keys in demos; no accredited guard; no dual-broker national/coalition separation | Exercise-ready, not deployment-accredited |
+| **MIP4-IES** | No JSON-LD wire profile in CI; XPath subset only; no NATO-provided accreditation vectors; journal poll only (no P2P protocol) | 100% dimensional conformance; operational interop gaps remain |
+| **Crypto / PKI** | Default `ring`; NMBS/KAS keys collapsed in demos; no HSM | Keys exported as PEM/DER |
+| **Audit** | In-memory fallback when `[audit]` unset; HTTP SIEM has no auth/retry/syslog; not WORM | Durable JSONL works; accredited logging pipeline incomplete |
+| **MIM import** | JC3IEDM v3.0 bundled (not authoritative MIM 5.1 OWL); no OWL reasoning/SHACL | Scale targets met; ontology source is fallback |
+| **Scenarios** | 5 synthetic demos; no live C2; no SAR/LOC/national-separation | Architecture patterns discussed but not demonstrated |
+
+### Recently closed (PR #13)
+
+| Was a limitation | Now |
+|------------------|-----|
+| Handling caveats not enforced in PDP | `SubjectAttributes.handling_caveats` checked against restrictive label categories |
+| `mission_id` ignored by PDP | `SecurityDomain.mission_compartments` + environment `mission_id` evaluated |
+| `FileAuditSink` wrote raw records (chain lost on disk) | Tamper-evident `AuditEnvelope` JSONL + `load_from_file()` |
+| DCS demos used ephemeral in-memory audit only | `[audit]` in `config/dcs-coalition.toml`; scenario exports SIEM JSON |
+| DCS compliance dimension did not verify audit count | Requires `audit.len() >= 2` and chain verify |
+
+---
+
 ## Policy plane — precise capability
 
 | Capability | Status |
@@ -171,15 +211,74 @@ SecurityDomain::new("DOMAIN-SAR", "SAR High Side", ClassificationLevel::Secret)
 
 ## Remaining priorities (operational path)
 
-1. National/coalition dual-broker compartment scenario (SAR, LOC)
-2. Production PKI defaults on HTTP server and DCS (feature-flag conformance keys)
-3. Live HTTPS E2E in CI
-4. MIP4-IES JSON-LD wire profile + NATO accreditation vectors
-5. WORM audit media / accredited SIEM connectors
-6. Signed SPIF distribution (NMRR-equivalent workflow)
-7. KAS client + ABAC at ZTDF decrypt (ACP-240 full)
+| # | Item | Tier unlocked | Effort |
+|---|------|---------------|--------|
+| 1 | National/coalition dual-broker compartment scenario (SAR, LOC) | Coalition exercise | Medium |
+| 2 | Production PKI defaults on HTTP server and DCS (feature-flag conformance keys) | Coalition exercise | Low–medium |
+| 3 | Live HTTPS E2E in CI | Coalition exercise / MIP4 pilot | Medium |
+| 4 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high |
+| 5 | WORM audit media / accredited SIEM connectors | Classified accredited | High |
+| 6 | Signed SPIF distribution (NMRR-equivalent workflow) | Classified accredited | High |
+| 7 | KAS client + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High |
 
 See [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md) for detail. MIP4-IES transport detail: [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md).
+
+---
+
+## Recommended implementation order (ROI)
+
+Ranked by **value unlocked per engineering effort**, given the current stack (100% conformance, handling-caveat + mission PDP, durable audit in place).
+
+### Tier 1 — implement first (highest ROI)
+
+**1. National/coalition dual-broker compartment scenario (SAR / LOC)**  
+- **Why:** Exercises the PDP features just shipped (`mission_id`, handling caveats, releasability filtering) in a realistic joint-ops pattern; turns architecture discussion into runnable proof.  
+- **Unlocks:** Coalition exercise credibility; PEP-filtered `SecuredExchangeBroker` vs raw journal; national-only vs coalition data separation.  
+- **Scope:** New scenario + `config/dcs-sar.toml` (or similar) with `mission_compartments`, dual brokers, `LOCSEN`/SAR labels; compliance dimension optional.  
+- **Effort:** Medium — mostly wiring existing crates; no new crypto or transport protocol.
+
+**2. Production PKI defaults (feature-flag conformance keys)**  
+- **Why:** Smallest change that moves the stack from “lab keys” to “exercise keys”; `NmbTrustStore` and PKCS#8 loaders already exist.  
+- **Unlocks:** Coalition exercise tier; HTTP server and DCS guard stop trusting conformance fixture by default when `MIM_CONFORMANCE_KEYS=1` is unset.  
+- **Scope:** Default `HttpExchangeConfig` / DCS to `NmbTrustStore::from_spki_pem_files`; conformance behind explicit feature or env flag.  
+- **Effort:** Low–medium — config + scenario updates + docs.
+
+**3. Live HTTPS E2E in CI**  
+- **Why:** MIP4-IES is 100% dimensional in unit tests but has no runtime HTTPS regression gate; catches rustls/envelope/PEP integration breaks.  
+- **Unlocks:** MIP4 operational pilot confidence; documents the coalition REST binding end-to-end.  
+- **Scope:** `mim-transport-http` integration test: spin `HttpExchangeServer`, PUT envelope, GET by OID, assert PEP deny/permit.  
+- **Effort:** Medium — CI plumbing + self-signed cert fixture.
+
+### Tier 2 — implement next (strong value, more cost)
+
+**4. LDAP/SAML PIP stub (structured NATO clearance)**  
+- **Why:** Policy plane bottleneck is static `SubjectAttributes`; a file- or fixture-driven PIP adapter unlocks realistic clearance without full IdP integration.  
+- **Unlocks:** Structured clearance XML path; reduces “caller-supplied clearance” risk in demos.  
+- **Effort:** Medium.
+
+**5. MIP4-IES JSON-LD wire profile (incremental)**  
+- **Why:** Closes the largest documented MIP4 transport gap that does not depend on NATO shipping vectors.  
+- **Unlocks:** FMN wire-format alignment; pairs with existing JSON-LD roundtrip tests.  
+- **Effort:** Medium–high; NATO vectors (item 4 dependency) may arrive later.
+
+**6. KAS client stub + ABAC gate before CEK unwrap**  
+- **Why:** Largest functional gap for ACP-240 full edition; ZTDF encoding is ready.  
+- **Unlocks:** Decrypt-time attribute check; path to Supp. 5 interop.  
+- **Effort:** High — new protocol surface.
+
+### Tier 3 — defer until accredited deployment (lower ROI now)
+
+**7. WORM audit / accredited SIEM** — infrastructure and accreditation process; durable JSONL + SIEM export already cover lab and coalition rehearsal.  
+**8. Signed SPIF distribution (NMRR)** — policy-admin maturity; current SPIF XSD + registry sufficient for conformance.  
+**9. Authoritative MIM 5.1 OWL** — blocked on mimworld republication; JC3IEDM fallback meets scale targets.
+
+### Suggested sprint sequence
+
+```
+Sprint A: dual-broker SAR scenario + production PKI defaults
+Sprint B: HTTPS E2E CI + LDAP/SAML PIP fixture adapter
+Sprint C: JSON-LD wire profile + KAS client stub (parallel if staffed)
+```
 
 ---
 

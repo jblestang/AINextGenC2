@@ -46,6 +46,11 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | MIP4-IES conformance runner | `mim-mip4-conformance` + `ainextgenc2 --mip4` (140/140 pass) |
 | FIPS build blocked on Rust 1.83 | `rust-toolchain.toml` 1.85 + `SecureRandom` import fix |
 | mimworld.org OWL 404 | DISO mirror + bundled `models/ontology/JC3IEDM.owl` fallback |
+| Handling caveats not enforced in PDP | `mim-policy/src/pdp.rs` — restrictive category vs `SubjectAttributes.handling_caveats` |
+| `mission_id` not evaluated by PDP | `SecurityDomain.mission_compartments` + environment/subject `mission_id` |
+| Audit file sink lost hash chain | `FileAuditSink` writes `AuditEnvelope` JSONL; `AuditLog::load_from_file()` |
+| No SIEM export connector | `forward_siem_to_file()`, `forward_log_http()` in `mim-audit` |
+| DCS audit not wired in config/scenario | `[audit]` in `config/dcs-coalition.toml`; DCS scenario exports SIEM JSON |
 
 ---
 
