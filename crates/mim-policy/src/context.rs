@@ -18,6 +18,12 @@ pub struct SubjectAttributes {
     pub subject_id: String,
     pub clearance: ClassificationLevel,
     pub nationality: Option<String>,
+    /// Handling caveats held by the subject (STANAG 4774 restrictive categories).
+    #[serde(default)]
+    pub handling_caveats: Vec<String>,
+    /// Active mission compartment for compartmented operations.
+    #[serde(default)]
+    pub mission_id: Option<String>,
 }
 
 impl SubjectAttributes {
@@ -26,12 +32,35 @@ impl SubjectAttributes {
             subject_id: subject_id.into(),
             clearance,
             nationality: None,
+            handling_caveats: Vec::new(),
+            mission_id: None,
         }
     }
 
     pub fn with_nationality(mut self, nationality: impl Into<String>) -> Self {
         self.nationality = Some(nationality.into());
         self
+    }
+
+    pub fn with_handling_caveats(mut self, caveats: Vec<String>) -> Self {
+        self.handling_caveats = caveats;
+        self
+    }
+
+    pub fn with_handling_caveat(mut self, caveat: impl Into<String>) -> Self {
+        self.handling_caveats.push(caveat.into());
+        self
+    }
+
+    pub fn with_mission_id(mut self, mission_id: impl Into<String>) -> Self {
+        self.mission_id = Some(mission_id.into());
+        self
+    }
+
+    pub fn holds_caveat(&self, caveat: &str) -> bool {
+        self.handling_caveats
+            .iter()
+            .any(|held| held.eq_ignore_ascii_case(caveat))
     }
 }
 
@@ -42,6 +71,9 @@ pub struct ResourceAttributes {
     pub classification: ClassificationLevel,
     pub releasable_countries: Vec<String>,
     pub policy_id: String,
+    /// Restrictive handling caveats on the labeled resource.
+    #[serde(default)]
+    pub handling_caveats: Vec<String>,
 }
 
 impl ResourceAttributes {
@@ -50,6 +82,7 @@ impl ResourceAttributes {
             classification: label.classification,
             releasable_countries: label.releasable_countries(),
             policy_id: label.policy.identifier.clone(),
+            handling_caveats: label.restrictive_category_values(),
         }
     }
 }

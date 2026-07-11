@@ -39,6 +39,19 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("ZTDF manifest:");
         println!("{manifest}");
     }
+    println!();
+    println!("Audit records:    {}", output.audit_record_count);
+    println!(
+        "Audit chain:      {}",
+        if output.audit_chain_verified {
+            "VERIFIED"
+        } else {
+            "FAILED"
+        }
+    );
+    if let Some(path) = &output.siem_export_path {
+        println!("SIEM export:      {path}");
+    }
 
     Ok(())
 }

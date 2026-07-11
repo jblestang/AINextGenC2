@@ -20,3 +20,4 @@ mim-spif = { workspace = true }
 mim-audit = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+uuid = { workspace = true }

@@ -5,13 +5,25 @@ use std::path::{Path, PathBuf};
 
 use mim_labeling::{DomainId, SecurityDomain};
 use mim_policy::{
-    apply_spif_to_store, CrossDomainPolicy, DowngradeConfig, PolicyAdministrationPoint,
+    apply_spif_to_store, CrossDomainPolicy, DowngradeConfig,
     PolicyDecisionPoint, PolicyEnforcementPoint, PolicyInformationPoint, PolicyStore,
 };
 use mim_spif::SpifRegistry;
 use serde::{Deserialize, Serialize};
 
 use crate::guard::CrossDomainGuard;
+
+/// Optional durable audit configuration for DCS guard operations.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditConfig {
+    /// Append-only envelope JSONL path for guard/transfer audit records.
+    #[serde(default)]
+    pub path: Option<String>,
+    /// Optional SIEM JSON export path written after each guarded transfer.
+    #[serde(default)]
+    pub siem_export_path: Option<String>,
+}
 
 /// Full DCS deployment configuration (TOML/JSON).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -25,6 +37,8 @@ pub struct DcsConfig {
     pub spif: SpifSourceConfig,
     #[serde(default)]
     pub downgrade: DowngradeConfig,
+    #[serde(default)]
+    pub audit: AuditConfig,
     #[serde(skip)]
     config_dir: Option<PathBuf>,
 }
@@ -39,6 +53,8 @@ pub struct DomainConfig {
     pub releasable_to: Vec<String>,
     #[serde(default)]
     pub accepted_nationalities: Vec<String>,
+    #[serde(default)]
+    pub mission_compartments: Vec<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -80,6 +96,7 @@ impl DcsConfig {
                     max_classification: "SECRET".into(),
                     releasable_to: vec!["USA".into(), "GBR".into(), "DEU".into()],
                     accepted_nationalities: vec!["USA".into(), "GBR".into(), "DEU".into()],
+                    mission_compartments: Vec::new(),
                 },
                 DomainConfig {
                     id: "DOMAIN-LOW".into(),
@@ -87,6 +104,7 @@ impl DcsConfig {
                     max_classification: "RESTRICTED".into(),
                     releasable_to: vec!["USA".into(), "GBR".into()],
                     accepted_nationalities: vec!["USA".into(), "GBR".into()],
+                    mission_compartments: Vec::new(),
                 },
             ],
             cross_domain: vec![CrossDomainRuleConfig {
@@ -100,8 +118,44 @@ impl DcsConfig {
                 validate_xsd: true,
             },
             downgrade: DowngradeConfig::default(),
+            audit: AuditConfig::default(),
             config_dir: None,
         }
+    }
+
+    fn resolve_audit_path(&self, path: &str) -> PathBuf {
+        self.resolve_relative_path(path)
+    }
+
+    pub fn resolved_siem_export_path(&self) -> Option<PathBuf> {
+        self.audit
+            .siem_export_path
+            .as_ref()
+            .map(|path| self.resolve_relative_path(path))
+    }
+
+    fn resolve_relative_path(&self, path: &str) -> PathBuf {
+        let direct = PathBuf::from(path);
+        if direct.is_absolute() {
+            return direct;
+        }
+        if let Some(dir) = &self.config_dir {
+            let from_config = dir.join(path);
+            if from_config.parent().is_some() {
+                return from_config;
+            }
+        }
+        workspace_root().join(path)
+    }
+
+    pub fn build_audit_log(&self) -> Result<Option<mim_audit::AuditLog>, String> {
+        let Some(path) = &self.audit.path else {
+            return Ok(None);
+        };
+        let resolved = self.resolve_audit_path(path);
+        Ok(Some(
+            mim_audit::AuditLog::file(&resolved).map_err(|e| e.to_string())?,
+        ))
     }
 
     pub fn from_toml_str(data: &str) -> Result<Self, String> {
@@ -193,10 +247,13 @@ impl DcsConfig {
     pub fn build_guard(&self) -> Result<CrossDomainGuard, String> {
         let store = self.build_policy_store()?;
         let (source, target) = self.primary_domain_pair()?;
-        let pep = PolicyEnforcementPoint::new(
+        let mut pep = PolicyEnforcementPoint::new(
             PolicyInformationPoint::new(),
             PolicyDecisionPoint::new(store),
         );
+        if let Some(audit) = self.build_audit_log()? {
+            pep = pep.with_audit(audit);
+        }
         Ok(CrossDomainGuard::from_policy_plane(pep, source, target))
     }
 
@@ -228,6 +285,9 @@ impl DomainConfig {
         }
         if !self.accepted_nationalities.is_empty() {
             domain = domain.with_accepted_nationalities(self.accepted_nationalities.clone());
+        }
+        if !self.mission_compartments.is_empty() {
+            domain = domain.with_mission_compartments(self.mission_compartments.clone());
         }
         Ok(domain)
     }

@@ -72,7 +72,14 @@ impl CrossDomainGuard {
     }
 
     pub fn evaluate(&self, label: &ConfidentialityLabel) -> LabelResult<GuardResult> {
-        let subject = SubjectAttributes::new("cross-domain-guard", label.classification);
+        self.evaluate_with_subject(label, SubjectAttributes::new("cross-domain-guard", label.classification))
+    }
+
+    pub fn evaluate_with_subject(
+        &self,
+        label: &ConfidentialityLabel,
+        subject: SubjectAttributes,
+    ) -> LabelResult<GuardResult> {
         let decision = self.pep.evaluate_cross_domain(
             subject,
             label,
@@ -81,6 +88,15 @@ impl CrossDomainGuard {
         )?;
 
         Ok(map_decision(decision))
+    }
+
+    pub fn with_audit(mut self, audit: mim_audit::AuditLog) -> Self {
+        self.pep = PolicyEnforcementPoint::new(
+            self.pep.pip().clone(),
+            PolicyDecisionPoint::new(self.pep.pdp().store().clone()),
+        )
+        .with_audit(audit);
+        self
     }
 
     pub fn preset_high_to_low() -> Self {

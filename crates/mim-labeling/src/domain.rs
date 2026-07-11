@@ -24,6 +24,9 @@ pub struct SecurityDomain {
     pub releasable_to: Vec<String>,
     #[serde(default)]
     pub accepted_nationalities: Vec<String>,
+    /// Mission compartments authorized in this domain (cross-domain transfers require matching `mission_id`).
+    #[serde(default)]
+    pub mission_compartments: Vec<String>,
 }
 
 impl SecurityDomain {
@@ -38,7 +41,21 @@ impl SecurityDomain {
             max_classification,
             releasable_to: Vec::new(),
             accepted_nationalities: Vec::new(),
+            mission_compartments: Vec::new(),
         }
+    }
+
+    pub fn with_mission_compartments(mut self, missions: Vec<String>) -> Self {
+        self.mission_compartments = missions;
+        self
+    }
+
+    pub fn accepts_mission(&self, mission_id: &str) -> bool {
+        self.mission_compartments.is_empty()
+            || self
+                .mission_compartments
+                .iter()
+                .any(|m| m.eq_ignore_ascii_case(mission_id))
     }
 
     pub fn with_accepted_nationalities(mut self, nationalities: Vec<String>) -> Self {

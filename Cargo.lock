@@ -963,6 +963,7 @@ dependencies = [
  "mim-ztdf",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]

@@ -30,3 +30,7 @@ validateXsd = true
 [downgrade]
 intersectReleasability = true
 stripNonTargetCategories = true
+
+[audit]
+path = "../target/dcs-audit.jsonl"
+siemExportPath = "../target/dcs-siem.json"

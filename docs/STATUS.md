@@ -71,7 +71,7 @@ Import pipeline:
 | Tier | Status | Notes |
 |------|--------|-------|
 | **Development / lab** | **Ready** | Full stack; conformance PKI; all compliance suites pass |
-| **Coalition exercise** | **Partial** | Requires production PKI (`NmbTrustStore`), TLS/mTLS, SPIF-administered guard, durable audit |
+| **Coalition exercise** | **Partial** | Requires production PKI (`NmbTrustStore`), TLS/mTLS, SPIF-administered guard, WORM/accredited SIEM |
 | **Classified accredited** | **Not ready** | FIPS-validated module build, HSM, WORM audit, formal guard accreditation |
 
 ---
@@ -84,9 +84,9 @@ Import pipeline:
 | ZTDF (ACP-240 Supp. 3–4) | Ready (encoding) | Partial | No KAS protocol; no ABAC at decrypt |
 | DCS cross-domain guard | Ready (config) | Partial | Conformance keys in demos; no accredited guard |
 | MIP4-IES transport | Ready (100% dimensional) | Partial | No live HTTPS E2E in CI; JSON-LD wire profile |
-| Policy plane (PIP/PDP/PEP) | Ready (subset) | Partial | No full CMBAC; `mission_id` not evaluated; static PIP |
+| Policy plane (PIP/PDP/PEP) | Ready (subset) | Partial | No full CMBAC; LDAP/SAML PIP; static PIP |
 | Crypto / PKI | Conformance + FIPS build path | Partial | Default `ring`; RSA outside FIPS module |
-| Audit | In-memory + file JSONL | Partial | No WORM / SIEM connector |
+| Audit | Durable envelope JSONL + SIEM export | Partial | No WORM media; HTTP SIEM is best-effort |
 | Scenarios | 5 demos | Demo only | Synthetic data; no live C2 integration |
 
 ---
@@ -114,22 +114,24 @@ Import pipeline:
 | Domain max classification ceiling | Implemented |
 | Cross-domain downgrade + releasability intersection | Implemented |
 | SPIF label validation at bind/guard | Implemented |
-| Audit of permit/deny/downgrade | Implemented |
+| Audit of permit/deny/downgrade | Implemented (PEP + DCS transfer) |
+| Handling-caveat enforcement in PDP | **Implemented** (restrictive categories vs subject caveats) |
+| `mission_id` in PDP evaluation | **Implemented** (domain `mission_compartments`) |
+| Durable audit envelopes (`FileAuditSink`) | **Implemented** |
+| SIEM JSON export / HTTP forward | **Implemented** (`forward_siem_to_file`, `forward_log_http`) |
 | Structured NATO clearance (XML/LDAP/SAML) | **Not implemented** |
 | Full CMBAC permissive/restrictive category matrix | **Not implemented** |
-| `mission_id` in PDP evaluation | **Not implemented** (field exists in context) |
-| Handling-caveat enforcement in PDP | **Not implemented** (label model supports it) |
 | LDAP/SAML PIP integration | **Not implemented** |
 
 ---
 
 ## Remaining priorities (operational path)
 
-1. Mission-aware PDP + national/coalition compartment scenario
+1. National/coalition dual-broker compartment scenario (SAR, LOC)
 2. Production PKI defaults on HTTP server and DCS (feature-flag conformance keys)
 3. Live HTTPS E2E in CI
 4. MIP4-IES JSON-LD wire profile + NATO accreditation vectors
-5. WORM / SIEM audit connectors
+5. WORM audit media / accredited SIEM connectors
 6. Signed SPIF distribution (NMRR-equivalent workflow)
 7. KAS client + ABAC at ZTDF decrypt (ACP-240 full)
 
