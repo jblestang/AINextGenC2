@@ -68,20 +68,20 @@ pub trait CryptoProvider: Send + Sync {
     ) -> CryptoResult<Vec<u8>>;
 }
 
-/// Active provider for this build (ring default, aws-lc-rs when `fips` feature enabled).
+/// Active provider for this build (FIPS AWS-LC by default, `ring` when `ring-backend` only).
 pub enum ActiveProvider {
-    #[cfg(all(feature = "ring-backend", not(feature = "fips")))]
+    #[cfg(all(feature = "ring-backend", not(any(feature = "fips", feature = "fips-validated"))))]
     Ring,
-    #[cfg(feature = "fips")]
+    #[cfg(any(feature = "fips", feature = "fips-validated"))]
     Fips,
 }
 
 impl ActiveProvider {
     pub fn get(&self) -> &'static dyn CryptoProvider {
         match self {
-            #[cfg(all(feature = "ring-backend", not(feature = "fips")))]
+            #[cfg(all(feature = "ring-backend", not(any(feature = "fips", feature = "fips-validated"))))]
             Self::Ring => &crate::ring_backend::RingProvider,
-            #[cfg(feature = "fips")]
+            #[cfg(any(feature = "fips", feature = "fips-validated"))]
             Self::Fips => &crate::fips_backend::FipsProvider,
         }
     }
@@ -89,16 +89,16 @@ impl ActiveProvider {
 
 /// Returns the active cryptographic provider for this build configuration.
 pub fn selected_provider() -> &'static dyn CryptoProvider {
-    #[cfg(feature = "fips")]
+    #[cfg(any(feature = "fips", feature = "fips-validated"))]
     {
         return ActiveProvider::Fips.get();
     }
-    #[cfg(all(feature = "ring-backend", not(feature = "fips")))]
+    #[cfg(all(feature = "ring-backend", not(any(feature = "fips", feature = "fips-validated"))))]
     {
         return ActiveProvider::Ring.get();
     }
-    #[cfg(not(any(feature = "fips", feature = "ring-backend")))]
-    compile_error!("enable `ring-backend` (default) or `fips` feature");
+    #[cfg(not(any(feature = "fips", feature = "fips-validated", feature = "ring-backend")))]
+    compile_error!("enable `fips` / `fips-validated` (default) or `ring-backend` feature");
 }
 
 /// Sign NMBS binding material: canonical label bytes + delimiter + payload digest.

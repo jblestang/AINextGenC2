@@ -19,7 +19,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | ZTDF / ACP-240 Supp. 3–4 | Ready (encoding) | Partial (no KAS/ABAC) | Not ready |
 | ACP-240 full (Ed A + Supp. 5) | Partial | Not ready | Not ready |
 | DCS cross-domain | Ready (config file) | Partial | Not ready |
-| Crypto / PKI | Production env PKI + conformance flag | PKI loaders exist; not default | RSA outside FIPS module |
+| Crypto / PKI | FIPS 140-3 default + production env PKI | FIPS-validated default; RSA outside module | HSM / PKCS#11 |
 | MIM manifest (OWL import) | **932/932 properties (100%)** | JC3IEDM v3.0 bundled | No authoritative MIM 5.1 OWL |
 | Policy plane (CMBAC) | Clearance + releasability subset | Partial | Not ready |
 | Audit | Durable envelope JSONL + SIEM export | Partial | WORM / accredited SIEM not implemented |
@@ -58,10 +58,11 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ## 1. Cryptography and PKI
 
-### 1.1 Default backend is non-FIPS `ring`
+### 1.1 Default backend is FIPS 140-3 validated AWS-LC
 
-- **Location:** `mim-crypto` default feature `ring-backend`
-- **Limitation:** Production builds use `ring` unless `--features fips` or `fips-validated` is selected.
+- **Location:** `mim-crypto` default feature `fips-validated`
+- **Status:** AES-256-GCM and SHA-256 run inside the FIPS 140-3 module by default.
+- **Opt-out:** `cargo build -p mim-crypto --no-default-features --features ring-backend` for non-FIPS lab builds.
 
 ### 1.2 Hybrid FIPS backend — RSA not in AWS-LC FIPS module
 
@@ -70,8 +71,8 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ### 1.3 `fips-validated` native build
 
-- **Status:** `fips` feature builds and tests pass on Rust 1.85.
-- **Limitation:** `fips-validated` (FIPS 140-3 module) requires native AWS-LC FIPS build (cmake, long compile); not exercised in default CI.
+- **Status:** Default workspace builds use `fips-validated`; CI installs cmake/Go and exercises the validated module on Rust 1.85.
+- **Limitation:** First compile is slow (native AWS-LC FIPS build); RSA-PSS/OAEP still use the `rsa` crate outside the module boundary.
 
 ### 1.4 Conformance / lab key material
 

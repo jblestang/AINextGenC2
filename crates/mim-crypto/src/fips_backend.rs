@@ -17,7 +17,18 @@ pub struct FipsProvider;
 
 impl CryptoProvider for FipsProvider {
     fn name(&self) -> &'static str {
-        "aws-lc-rs (FIPS)"
+        #[cfg(feature = "fips-validated")]
+        {
+            return "aws-lc-rs (FIPS 140-3 validated)";
+        }
+        #[cfg(all(feature = "fips", not(feature = "fips-validated")))]
+        {
+            return "aws-lc-rs (FIPS-capable)";
+        }
+        #[cfg(not(any(feature = "fips", feature = "fips-validated")))]
+        {
+            return "aws-lc-rs (FIPS)";
+        }
     }
 
     fn hash_sha256(&self, data: &[u8]) -> [u8; 32] {

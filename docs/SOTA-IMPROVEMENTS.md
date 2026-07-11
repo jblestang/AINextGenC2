@@ -63,7 +63,7 @@ Summary of state-of-the-art hardening delivered across branches `cursor/sota-spi
 cargo test --workspace
 cargo test -p mim-spif
 cargo test -p mim-stanag4774
-cargo test -p mim-crypto --features fips
+cargo test -p mim-crypto
 cargo run -p mim-import -- --source bundled:jc3iedm \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 cargo run -p ainextgenc2

@@ -429,12 +429,14 @@ impl LabelingComplianceChecker {
     fn dimension_fips_crypto(&self) -> LabelingDimensionResult {
         let provider = selected_provider();
         let name = provider.name();
-        let (score, detail) = if name.contains("FIPS") {
+        let (score, detail) = if name.contains("FIPS 140-3 validated") {
+            (1.0, "FIPS 140-3 validated AWS-LC module active")
+        } else if name.contains("FIPS") {
             (1.0, "FIPS-capable AWS-LC module active")
         } else if name.contains("ring") {
             (
-                1.0,
-                "ring backend active — rebuild with `mim-crypto/fips-validated` for FIPS 140-3 module",
+                0.5,
+                "non-FIPS ring backend — rebuild with default `mim-crypto` features for FIPS 140-3",
             )
         } else {
             (0.0, "unknown crypto provider")

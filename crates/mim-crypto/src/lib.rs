@@ -1,10 +1,9 @@
 //! Cryptographic services for NATO metadata binding (NMBS) and ZTDF packaging.
 //!
-//! Provides a [`CryptoProvider`] trait with two backends:
-//! - **ring** (default) — production-grade RustCrypto via `ring`
-//! - **fips** — FIPS 140-3 validated module via `aws-lc-rs`
-//!
-//! Select at build time: `cargo build -p mim-crypto --features fips`
+//! Provides a [`CryptoProvider`] trait with three backends:
+//! - **fips-validated** (default) — FIPS 140-3 validated AWS-LC module via `aws-lc-rs`
+//! - **fips** — FIPS-capable AWS-LC (non-validated module) for lab builds
+//! - **ring** — non-FIPS RustCrypto via `ring` (`--no-default-features --features ring-backend`)
 
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
@@ -26,10 +25,10 @@ mod provider;
 mod runtime_pki;
 mod symmetric;
 
-#[cfg(all(feature = "ring-backend", not(feature = "fips")))]
+#[cfg(all(feature = "ring-backend", not(any(feature = "fips", feature = "fips-validated"))))]
 mod ring_backend;
 
-#[cfg(feature = "fips")]
+#[cfg(any(feature = "fips", feature = "fips-validated"))]
 mod fips_backend;
 
 pub use error::{CryptoError, CryptoResult};

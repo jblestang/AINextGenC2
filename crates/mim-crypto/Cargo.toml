@@ -8,12 +8,12 @@ repository.workspace = true
 rust-version.workspace = true
 
 [features]
-default = ["ring-backend"]
+default = ["fips-validated"]
 ring-backend = ["dep:ring"]
 # AWS-LC module for AES-GCM/SHA-256 inside the crypto boundary (RSA remains via `rsa` crate).
-fips = ["dep:aws-lc-rs"]
-# FIPS 140-3 validated AWS-LC build — requires native toolchain support.
-fips-validated = ["fips", "aws-lc-rs/fips"]
+fips = ["dep:aws-lc-rs", "aws-lc-rs/non-fips"]
+# FIPS 140-3 validated AWS-LC build — requires native toolchain support (cmake, Go).
+fips-validated = ["dep:aws-lc-rs", "aws-lc-rs/fips"]
 
 [dependencies]
 base64 = { workspace = true }
@@ -29,4 +29,4 @@ pkcs8 = "=0.9.0"
 pkcs1 = "=0.4.1"
 signature = "2.2"
 ring = { version = "0.17", optional = true }
-aws-lc-rs = { version = "1.12", optional = true, default-features = false, features = ["non-fips"] }
+aws-lc-rs = { version = "1.12", optional = true, default-features = false }
