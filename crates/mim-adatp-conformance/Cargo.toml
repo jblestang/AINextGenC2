@@ -1,0 +1,16 @@
+[package]
+name = "mim-adatp-conformance"
+description = "NATO ADatP conformance test suite for STANAG 4774/4778 and ZTDF"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mim-labeling = { workspace = true }
+mim-stanag4774 = { workspace = true }
+mim-stanag4778 = { workspace = true }
+mim-ztdf = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -89,6 +89,8 @@ fn parse_category(value: &Value) -> LabelResult<CategoryMarking> {
         .map(|t| {
             if t.eq_ignore_ascii_case("RESTRICTIVE") {
                 CategoryType::Restrictive
+            } else if t.eq_ignore_ascii_case("INFORMATIVE") {
+                CategoryType::Informative
             } else {
                 CategoryType::Permissive
             }
