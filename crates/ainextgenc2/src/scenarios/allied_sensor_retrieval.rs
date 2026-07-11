@@ -5,9 +5,12 @@
 //! 2. The national broker journals PutObject operations with NATO labels and coalition releasability.
 //! 3. A GBR allied C2 replicates the journal via [`ReplicationAgent`].
 //! 4. A GBR analyst queries targets/tracks through a PEP-gated broker (nationality + clearance).
+//! 5. PEP/PDP decisions are recorded for each publish and read evaluation.
 
 use mim_labeling::{ClassificationLevel, LabelPolicy};
-use mim_policy::SubjectAttributes;
+use mim_policy::{
+    AccessOperation, PolicyEffect, PolicyInformationPoint, SubjectAttributes,
+};
 use mim_transport::{
     ExchangeBroker, GetByFilterRequest, ReplicationAgent, SecuredExchangeBroker, TransportError,
     TransportResult,
@@ -16,6 +19,24 @@ use serde::{Deserialize, Serialize};
 
 use crate::scenarios::air_defense_radar::{AirDefenseRadarScenario, RadarDetection};
 use crate::MimStack;
+
+/// PEP/PDP decision recorded for a single access evaluation.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyAccessDecision {
+    pub phase: String,
+    pub subject_id: String,
+    pub subject_nationality: Option<String>,
+    pub subject_clearance: String,
+    pub operation: String,
+    pub resource_class: String,
+    pub resource_name: Option<String>,
+    pub resource_classification: String,
+    pub resource_releasability: String,
+    pub domain_id: String,
+    pub effect: String,
+    pub reason: String,
+}
 
 /// A target or track retrieved by the allied C2 analyst.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -41,6 +62,7 @@ pub struct AlliedSensorRetrievalOutput {
     pub hostile_track_oid: Option<String>,
     pub usa_only_hidden_from_allied: bool,
     pub retrieved: Vec<RetrievedTrack>,
+    pub policy_decisions: Vec<PolicyAccessDecision>,
 }
 
 /// National + allied C2 exchange for coalition sensor track sharing.
@@ -93,9 +115,17 @@ impl AlliedSensorRetrievalScenario {
             .with_nationality("USA");
         let mut usa_c2 = SecuredExchangeBroker::from_preset(
             ExchangeBroker::new(registry.clone()),
-            usa_subject,
+            usa_subject.clone(),
             &self.usa_domain_id,
         )?;
+
+        let mut policy_decisions = evaluate_publish_decisions(
+            usa_c2.pep(),
+            &usa_subject,
+            usa_c2.domain(),
+            &instances,
+        )?;
+
         let usa_responses = usa_c2.publish_store(instances)?;
         let usa_published_count = usa_responses.len();
 
@@ -110,9 +140,16 @@ impl AlliedSensorRetrievalScenario {
             .with_nationality("GBR");
         let gbr_c2 = SecuredExchangeBroker::from_preset(
             allied_broker,
-            gbr_subject,
+            gbr_subject.clone(),
             &self.allied_domain_id,
         )?;
+
+        policy_decisions.extend(evaluate_read_decisions(
+            gbr_c2.pep(),
+            &gbr_subject,
+            gbr_c2.domain(),
+            gbr_c2.broker(),
+        )?);
 
         let targets = gbr_c2.get_by_filter(GetByFilterRequest {
             class_name: "Target".into(),
@@ -173,7 +210,126 @@ impl AlliedSensorRetrievalScenario {
             hostile_track_oid,
             usa_only_hidden_from_allied,
             retrieved,
+            policy_decisions,
         })
+    }
+}
+
+fn evaluate_publish_decisions(
+    pep: &mim_policy::PolicyEnforcementPoint,
+    subject: &SubjectAttributes,
+    domain: &mim_labeling::SecurityDomain,
+    instances: &[mim_runtime::MimInstance],
+) -> TransportResult<Vec<PolicyAccessDecision>> {
+    instances
+        .iter()
+        .map(|instance| {
+            record_access_decision(
+                pep,
+                subject,
+                domain,
+                AccessOperation::Write,
+                "usa-national-c2-write",
+                instance,
+            )
+        })
+        .collect()
+}
+
+fn evaluate_read_decisions(
+    pep: &mim_policy::PolicyEnforcementPoint,
+    subject: &SubjectAttributes,
+    domain: &mim_labeling::SecurityDomain,
+    broker: &ExchangeBroker,
+) -> TransportResult<Vec<PolicyAccessDecision>> {
+    broker
+        .instances()
+        .map(|instance| {
+            record_access_decision(
+                pep,
+                subject,
+                domain,
+                AccessOperation::Read,
+                "gbr-allied-c2-read",
+                instance,
+            )
+        })
+        .collect()
+}
+
+fn record_access_decision(
+    pep: &mim_policy::PolicyEnforcementPoint,
+    subject: &SubjectAttributes,
+    domain: &mim_labeling::SecurityDomain,
+    operation: AccessOperation,
+    phase: &str,
+    instance: &mim_runtime::MimInstance,
+) -> TransportResult<PolicyAccessDecision> {
+    let label = PolicyInformationPoint::label_from_security(&instance.metadata.security)
+        .map_err(map_policy_error)?;
+    let decision = pep
+        .evaluate_access(subject.clone(), &label, operation, domain)
+        .map_err(map_policy_error)?;
+    Ok(PolicyAccessDecision {
+        phase: phase.into(),
+        subject_id: subject.subject_id.clone(),
+        subject_nationality: subject.nationality.clone(),
+        subject_clearance: subject.clearance.as_stanag_str().into(),
+        operation: match operation {
+            AccessOperation::Read => "Read",
+            AccessOperation::Write => "Write",
+            AccessOperation::Delete => "Delete",
+            AccessOperation::CrossDomainTransfer => "CrossDomainTransfer",
+        }
+        .into(),
+        resource_class: instance.class_name.clone(),
+        resource_name: instance_display_name(instance),
+        resource_classification: label.classification.as_stanag_str().into(),
+        resource_releasability: label.releasable_countries().join(","),
+        domain_id: domain.id.0.clone(),
+        effect: effect_label(decision.effect).into(),
+        reason: decision.reason,
+    })
+}
+
+fn effect_label(effect: PolicyEffect) -> &'static str {
+    match effect {
+        PolicyEffect::Permit => "permit",
+        PolicyEffect::Deny => "deny",
+        PolicyEffect::Downgrade => "downgrade",
+    }
+}
+
+fn instance_display_name(instance: &mim_runtime::MimInstance) -> Option<String> {
+    instance
+        .property("nameText")
+        .and_then(|p| p.value.as_option())
+        .and_then(|v| v.as_str())
+        .map(str::to_owned)
+        .or_else(|| {
+            instance
+                .property("trackNumberQuantity")
+                .and_then(|p| p.value.as_option())
+                .and_then(|v| v.as_f64())
+                .map(|n| format!("T{n:03}"))
+        })
+        .or_else(|| {
+            instance
+                .metadata
+                .reporter
+                .name
+                .as_option()
+                .cloned()
+        })
+}
+
+fn map_policy_error(error: mim_policy::PolicyError) -> TransportError {
+    match error {
+        mim_policy::PolicyError::Denied(msg) => TransportError::Forbidden(msg),
+        mim_policy::PolicyError::Validation(msg) => TransportError::Validation(msg),
+        mim_policy::PolicyError::NotFound(msg) => TransportError::NotFound(msg),
+        mim_policy::PolicyError::Invalid(msg) => TransportError::InvalidRequest(msg),
+        mim_policy::PolicyError::Serialization(msg) => TransportError::Serialization(msg),
     }
 }
 
@@ -260,6 +416,27 @@ mod tests {
             .retrieved
             .iter()
             .any(|track| track.name.as_deref() == Some("USA-EYES-ONLY")));
+
+        let write_permits = output
+            .policy_decisions
+            .iter()
+            .filter(|d| d.phase == "usa-national-c2-write")
+            .filter(|d| d.effect == "permit")
+            .count();
+        assert_eq!(write_permits, 7);
+
+        let read_denies: Vec<_> = output
+            .policy_decisions
+            .iter()
+            .filter(|d| d.phase == "gbr-allied-c2-read" && d.effect == "deny")
+            .collect();
+        assert_eq!(read_denies.len(), 2);
+        assert!(read_denies
+            .iter()
+            .all(|d| d.reason.contains("nationality GBR not in resource releasability")));
+        assert!(read_denies
+            .iter()
+            .any(|d| d.resource_name.as_deref() == Some("USA-EYES-ONLY")));
     }
 
     #[test]

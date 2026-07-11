@@ -7,7 +7,8 @@ pub mod transport_exchange;
 
 pub use air_defense_radar::{AirDefenseRadarScenario, RadarDetection, ScenarioOutput};
 pub use allied_sensor_retrieval::{
-    AlliedSensorRetrievalOutput, AlliedSensorRetrievalScenario, RetrievedTrack,
+    AlliedSensorRetrievalOutput, AlliedSensorRetrievalScenario, PolicyAccessDecision,
+    RetrievedTrack,
 };
 pub use dcs_cross_domain::{DcsCrossDomainScenario, DcsScenarioOutput};
 pub use transport_exchange::{TransportExchangeScenario, TransportScenarioOutput};

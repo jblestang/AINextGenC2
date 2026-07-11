@@ -54,12 +54,24 @@ impl PolicyEnforcementPoint {
         operation: AccessOperation,
         domain: &SecurityDomain,
     ) -> PolicyResult<PolicyDecision> {
-        let context = self.pip.access_context(subject.clone(), label, operation, domain)?;
-        let decision = self.pdp.evaluate(&context)?;
-        self.record_access_audit(&subject, label, domain, operation, &decision);
+        let decision = self.evaluate_access(subject.clone(), label, operation, domain)?;
         if decision.effect == PolicyEffect::Deny {
             return Err(PolicyError::Denied(decision.reason));
         }
+        Ok(decision)
+    }
+
+    /// Evaluate local access without enforcing (returns permit and deny decisions).
+    pub fn evaluate_access(
+        &self,
+        subject: SubjectAttributes,
+        label: &ConfidentialityLabel,
+        operation: AccessOperation,
+        domain: &SecurityDomain,
+    ) -> PolicyResult<PolicyDecision> {
+        let context = self.pip.access_context(subject.clone(), label, operation, domain)?;
+        let decision = self.pdp.evaluate(&context)?;
+        self.record_access_audit(&subject, label, domain, operation, &decision);
         Ok(decision)
     }
 
@@ -199,6 +211,29 @@ mod tests {
             )
             .expect_err("deny");
         assert!(matches!(err, PolicyError::Denied(_)));
+    }
+
+    #[test]
+    fn evaluate_access_returns_deny_without_error() {
+        let pep = PolicyEnforcementPoint::from_preset_high_to_low();
+        let domain = pep
+            .pdp()
+            .store()
+            .domain(&DomainId::new("DOMAIN-HIGH"))
+            .expect("domain")
+            .clone();
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret)
+            .with_category(CategoryMarking::releasable_to(vec!["USA".into()]));
+        let decision = pep
+            .evaluate_access(
+                SubjectAttributes::new("gbr-analyst", ClassificationLevel::Secret)
+                    .with_nationality("GBR"),
+                &label,
+                AccessOperation::Read,
+                &domain,
+            )
+            .expect("evaluate");
+        assert_eq!(decision.effect, PolicyEffect::Deny);
     }
 
     #[test]

@@ -7,7 +7,7 @@
 //! Run with:
 //!   cargo run --example allied_c2_sensor_retrieval
 
-use ainextgenc2::{AlliedSensorRetrievalScenario, MimStack};
+use ainextgenc2::{AlliedSensorRetrievalScenario, MimStack, PolicyAccessDecision};
 
 fn main() {
     if let Err(err) = run() {
@@ -47,6 +47,8 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         output.allied_nationality, output.usa_only_hidden_from_allied
     );
     println!();
+    print_policy_plane(&output.policy_decisions);
+    println!();
     println!("Retrieved coalition tracks/targets:");
     for item in &output.retrieved {
         let name = item.name.as_deref().unwrap_or("(track)");
@@ -57,4 +59,33 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn print_policy_plane(decisions: &[PolicyAccessDecision]) {
+    println!("Policy plane (PIP → PDP → PEP)");
+    println!("------------------------------");
+    for phase in ["usa-national-c2-write", "gbr-allied-c2-read"] {
+        let phase_decisions: Vec<_> = decisions.iter().filter(|d| d.phase == phase).collect();
+        if phase_decisions.is_empty() {
+            continue;
+        }
+        println!("{phase}:");
+        for decision in phase_decisions {
+            let resource = decision
+                .resource_name
+                .as_deref()
+                .unwrap_or(&decision.resource_class);
+            println!(
+                "  PEP {} {} → {} {} REL [{}] @ {} → PDP {} ({})",
+                decision.operation,
+                decision.subject_id,
+                decision.subject_nationality.as_deref().unwrap_or("-"),
+                resource,
+                decision.resource_releasability,
+                decision.domain_id,
+                decision.effect.to_uppercase(),
+                decision.reason
+            );
+        }
+    }
 }
