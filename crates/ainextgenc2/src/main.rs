@@ -60,7 +60,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     println!();
     println!("MIM Dimensions:");
     for dimension in &report.dimensions {
-        print_dimension(&format!("{dimension:?}"), dimension.score, &dimension.message, dimension.status == mim_compliance::ComplianceStatus::Compliant);
+        print_dimension(
+            &format!("{dimension:?}"),
+            dimension.score,
+            &dimension.message,
+            dimension.status == mim_compliance::ComplianceStatus::Compliant,
+        );
     }
 
     println!();
