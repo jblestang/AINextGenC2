@@ -1,8 +1,7 @@
 //! Cross-domain DCS scenario: labeled MIM radar exchange across security domains.
-//!
-//! Labels radar track data with STANAG 4774, binds via STANAG 4778, packages
-//! in ZTDF, and transfers through a cross-domain guard.
 
+use mim_audit::AuditLog;
+use mim_crypto::conformance_keypair;
 use mim_dcs::{
     CrossDomainGuard, CrossDomainTransfer, GuardDecision, LabeledMimExchange, TransferOutcome,
 };
@@ -11,12 +10,11 @@ use mim_labeling::{
 };
 use mim_labeling_compliance::LabelingComplianceChecker;
 use mim_runtime::Serializer;
+use mim_stanag4778::BindingDataObject;
 use serde::{Deserialize, Serialize};
 
 use crate::scenarios::air_defense_radar::AirDefenseRadarScenario;
 use crate::MimStack;
-
-const BINDING_SECRET: &[u8] = b"ainextgenc2-dcs-binding-secret!";
 
 /// Output of the DCS cross-domain labeling scenario.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -57,6 +55,7 @@ impl DcsCrossDomainScenario {
     }
 
     pub fn run(&self, stack: &MimStack) -> mim_core::MimResult<DcsScenarioOutput> {
+        let keys = conformance_keypair().map_err(|e| mim_core::MimError::Validation(e.to_string()))?;
         let registry = stack.registry();
         let radar_store = AirDefenseRadarScenario::demo().build_store(registry)?;
 
@@ -65,8 +64,16 @@ impl DcsCrossDomainScenario {
             &radar_store,
             &serializer,
             &self.label,
-            BINDING_SECRET,
+            keys.signing_key(),
+            keys.verifying_key(),
+            keys.verifying_key(),
             true,
+        )?;
+
+        let inbound_binding = BindingDataObject::assertion_bound(
+            self.label.clone(),
+            labeled.mim_json.as_bytes(),
+            keys.signing_key(),
         )?;
 
         let transfer = CrossDomainTransfer {
@@ -74,11 +81,16 @@ impl DcsCrossDomainScenario {
             target_domain: self.guard.target().id.clone(),
             label: self.label.clone(),
             payload: labeled.mim_json.clone(),
-            binding_secret: BINDING_SECRET.to_vec(),
+            inbound_binding,
+            nmb_signing_key: keys.signing_key().clone(),
+            nmb_verifying_key: keys.verifying_key().clone(),
+            kas_signing_key: keys.signing_key().clone(),
+            kas_verifying_key: keys.verifying_key().clone(),
         };
 
+        let audit = AuditLog::memory();
         let guard_result = transfer.guard_result(&self.guard)?;
-        let outcome = transfer.execute(&self.guard)?;
+        let outcome = transfer.execute(&self.guard, &audit)?;
 
         let (label_xml, ztdf_manifest) = match &outcome {
             TransferOutcome::Released {

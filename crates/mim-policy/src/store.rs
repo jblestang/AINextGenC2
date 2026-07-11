@@ -42,11 +42,16 @@ impl CrossDomainPolicy {
 pub struct PolicyStore {
     domains: IndexMap<String, SecurityDomain>,
     cross_domain_policies: Vec<CrossDomainPolicy>,
+    spif_policies: Vec<mim_spif::SpifPolicy>,
 }
 
 impl PolicyStore {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            domains: IndexMap::new(),
+            cross_domain_policies: Vec::new(),
+            spif_policies: Vec::new(),
+        }
     }
 
     pub fn domain(&self, id: &DomainId) -> Option<&SecurityDomain> {
@@ -114,6 +119,31 @@ impl PolicyStore {
             .position(|policy| policy.id == id)
             .ok_or_else(|| PolicyError::NotFound(format!("policy '{id}' not found")))?;
         Ok(self.cross_domain_policies.remove(position))
+    }
+
+    pub fn register_spif_policy(&mut self, policy: mim_spif::SpifPolicy) -> PolicyResult<()> {
+        if self
+            .spif_policies
+            .iter()
+            .any(|p| p.policy_id == policy.policy_id)
+        {
+            return Err(PolicyError::Invalid(format!(
+                "SPIF policy '{}' already registered",
+                policy.policy_id
+            )));
+        }
+        self.spif_policies.push(policy);
+        Ok(())
+    }
+
+    pub fn spif_policies(&self) -> &[mim_spif::SpifPolicy] {
+        &self.spif_policies
+    }
+
+    pub fn cross_domain_policy_for_spif(&self, spif_id: &str) -> Option<&CrossDomainPolicy> {
+        self.cross_domain_policies
+            .iter()
+            .find(|p| p.description.contains(spif_id))
     }
 
     pub fn preset_high_to_low() -> Self {

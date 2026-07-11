@@ -24,6 +24,7 @@ pub mod pap;
 pub mod pdp;
 pub mod pep;
 pub mod pip;
+pub mod spif_admin;
 pub mod store;
 
 pub use context::{
@@ -34,4 +35,7 @@ pub use pap::PolicyAdministrationPoint;
 pub use pdp::{PolicyDecision, PolicyDecisionPoint, PolicyEffect};
 pub use pep::PolicyEnforcementPoint;
 pub use pip::PolicyInformationPoint;
+pub use spif_admin::{
+    apply_spif_to_store, cross_domain_policy_from_spif, guard_domains_from_spif,
+};
 pub use store::{CrossDomainPolicy, PolicyStore};

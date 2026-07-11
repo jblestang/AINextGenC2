@@ -1,0 +1,29 @@
+[package]
+name = "mim-transport-http"
+description = "MIP4-IES HTTP/REST transport with TLS/mTLS and STANAG 4778 envelopes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mim-core = { workspace = true }
+mim-labeling = { workspace = true }
+mim-runtime = { workspace = true }
+mim-model = { workspace = true }
+mim-policy = { workspace = true }
+mim-transport = { workspace = true }
+mim-stanag4778 = { workspace = true }
+mim-crypto = { workspace = true }
+axum = "0.7"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["server-auto", "tokio"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
+tokio-rustls = "0.25"
+rustls = { version = "0.22", default-features = false, features = ["ring", "logging", "tls12"] }
+rustls-pemfile = "2"
+tower = { version = "0.4", features = ["util"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

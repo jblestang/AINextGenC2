@@ -5,7 +5,7 @@ use crate::error::{PolicyError, PolicyResult};
 use crate::store::PolicyStore;
 
 /// Policy decision effect.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum PolicyEffect {
     Permit,
     Deny,

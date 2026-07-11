@@ -1,7 +1,8 @@
 //! STANAG 4778 metadata binding mechanism (ADatP-4778).
 //!
 //! Binds STANAG 4774 confidentiality labels to MIM data objects using
-//! embedded, encapsulated, detached, and assertion binding profiles.
+//! embedded, encapsulated, detached, assertion, REST envelope, and SMTP header profiles.
+//! Cryptographic bindings use NMBS RSA-PSS-SHA256 via `mim-crypto`.
 
 #![forbid(unsafe_code)]
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
@@ -18,7 +19,11 @@
 pub mod assertion;
 pub mod binding;
 pub mod bdo;
+pub mod rest_envelope;
+pub mod smtp_header;
 
 pub use assertion::{AssertionBinding, BindingSignature};
 pub use binding::{BindingMethod, BindingProfile, MetadataBinding};
 pub use bdo::BindingDataObject;
+pub use rest_envelope::RestEnvelope;
+pub use smtp_header::SmtpHeaderBinding;

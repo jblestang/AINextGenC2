@@ -1,3 +1,4 @@
+use mim_crypto::conformance_keypair;
 use mim_labeling::{ClassificationLevel, ConfidentialityLabel, LabelPolicy};
 use mim_stanag4774::{Stanag4774Codec, Stanag4774Format};
 use mim_stanag4778::{AssertionBinding, BindingDataObject};
@@ -6,8 +7,6 @@ use crate::acme::{acme_invalid_label, acme_valid_label, validate_acme_semantics}
 use crate::report::{AdatpConformanceReport, AdatpSuiteResult, AdatpTestResult};
 use crate::vectors::ADATP_VECTORS;
 use crate::ztdf::run_ztdf_suite;
-
-const BINDING_SECRET: &[u8] = b"adatp-conformance-binding-secret!";
 
 /// Runs the NATO ADatP conformance test suite.
 #[derive(Clone, Debug, Default)]
@@ -24,7 +23,8 @@ impl AdatpConformanceRunner {
             self.suite_adatp_4774_annex_b_roundtrip(),
             self.suite_adatp_4774_1_acme(),
             self.suite_adatp_4778_binding(),
-            run_ztdf_suite(BINDING_SECRET),
+            self.suite_spif_policies(),
+            run_ztdf_suite(),
         ];
 
         let total = suites.iter().map(|s| s.total).sum::<usize>();
@@ -182,24 +182,29 @@ impl AdatpConformanceRunner {
     }
 
     fn suite_adatp_4778_binding(&self) -> AdatpSuiteResult {
+        let keys = conformance_keypair().expect("keys");
         let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
         let payload = br#"{"modelVersion":"5.1.0","instances":[]}"#;
 
-        let assertion = AssertionBinding::create(&label, payload, BINDING_SECRET);
+        let assertion = AssertionBinding::create(&label, payload, keys.signing_key());
         let bdo_embedded = BindingDataObject::embedded(label.clone(), payload);
-        let bdo_assertion = BindingDataObject::assertion_bound(label, payload, BINDING_SECRET);
+        let bdo_xml = BindingDataObject::xml_embedded(label.clone(), payload);
+        let bdo_encap = BindingDataObject::encapsulated(label.clone(), payload);
+        let bdo_detached = BindingDataObject::detached(label.clone(), payload, "label.xml");
+        let bdo_assertion =
+            BindingDataObject::assertion_bound(label, payload, keys.signing_key());
 
         let verify_assertion = assertion
             .as_ref()
-            .map(|b| b.verify(payload, BINDING_SECRET).is_ok())
+            .map(|b| b.verify(payload, keys.verifying_key()).is_ok())
             .unwrap_or(false);
         let verify_bdo = bdo_assertion
             .as_ref()
-            .map(|b| b.verify(payload, Some(BINDING_SECRET)).is_ok())
+            .map(|b| b.verify(payload, Some(keys.verifying_key())).is_ok())
             .unwrap_or(false);
         let tamper_fails = assertion
             .as_ref()
-            .map(|b| b.verify(b"tampered", BINDING_SECRET).is_err())
+            .map(|b| b.verify(b"tampered", keys.verifying_key()).is_err())
             .unwrap_or(false);
 
         let tests = vec![
@@ -207,7 +212,7 @@ impl AdatpConformanceRunner {
                 id: "4778-assertion-create".into(),
                 suite: "ADatP-4778".into(),
                 passed: assertion.is_ok(),
-                message: "NMBS Set: assertion binding created".into(),
+                message: "NMBS Set: RSA-PSS-SHA256 assertion binding created".into(),
             },
             AdatpTestResult {
                 id: "4778-assertion-verify".into(),
@@ -218,8 +223,30 @@ impl AdatpConformanceRunner {
             AdatpTestResult {
                 id: "4778-embedded-bdo".into(),
                 suite: "ADatP-4778".into(),
-                passed: bdo_embedded.is_ok(),
-                message: "ADatP-4778.2 JSON sidecar embedded BDO".into(),
+                passed: bdo_embedded.is_ok()
+                    && bdo_embedded
+                        .as_ref()
+                        .map(|b| b.verify(payload, None).is_ok())
+                        .unwrap_or(false),
+                message: "ADatP-4778.2 JSON sidecar embedded BDO with digest".into(),
+            },
+            AdatpTestResult {
+                id: "4778-xml-embedded-bdo".into(),
+                suite: "ADatP-4778".into(),
+                passed: bdo_xml.is_ok(),
+                message: "ADatP-4778.2 XML embedded BDO".into(),
+            },
+            AdatpTestResult {
+                id: "4778-encapsulated-bdo".into(),
+                suite: "ADatP-4778".into(),
+                passed: bdo_encap.is_ok(),
+                message: "ADatP-4778.2 encapsulated BDO".into(),
+            },
+            AdatpTestResult {
+                id: "4778-detached-bdo".into(),
+                suite: "ADatP-4778".into(),
+                passed: bdo_detached.is_ok(),
+                message: "ADatP-4778.2 detached BDO".into(),
             },
             AdatpTestResult {
                 id: "4778-assertion-bdo".into(),
@@ -231,11 +258,47 @@ impl AdatpConformanceRunner {
                 id: "4778-tamper-detect".into(),
                 suite: "ADatP-4778".into(),
                 passed: tamper_fails,
-                message: "Cryptographic binding detects payload tampering".into(),
+                message: "NMBS binding detects payload tampering".into(),
             },
         ];
 
         Self::finalize_suite("ADatP-4778 Metadata Binding", tests)
+    }
+
+    fn suite_spif_policies(&self) -> AdatpSuiteResult {
+        let mut registry = mim_spif::SpifRegistry::new();
+        let fixtures = [
+            ("acme-policy.xml", include_str!("../fixtures/spif/acme-policy.xml")),
+            (
+                "nato-4774-policy.xml",
+                include_str!("../fixtures/spif/nato-4774-policy.xml"),
+            ),
+            (
+                "capco-us-policy.xml",
+                include_str!("../fixtures/spif/capco-us-policy.xml"),
+            ),
+            ("uk-demo.xml", include_str!("../fixtures/spif/uk-demo.xml")),
+        ];
+        let mut tests = Vec::new();
+        for (id, xml) in fixtures {
+            let load_ok = registry.load_xml(xml).is_ok();
+            tests.push(AdatpTestResult {
+                id: format!("spif-load-{id}"),
+                suite: "XML-SPIF".into(),
+                passed: load_ok,
+                message: format!("SPIF policy {id} ingested"),
+            });
+        }
+        let validator = mim_spif::SpifValidator::new(registry);
+        let uk_secret = ConfidentialityLabel::new(LabelPolicy::new("DEMO-UK"), ClassificationLevel::Secret)
+            .with_category(mim_labeling::CategoryMarking::handling_caveat("LOCSEN"));
+        tests.push(AdatpTestResult {
+            id: "spif-uk-secret-valid".into(),
+            suite: "XML-SPIF".into(),
+            passed: validator.validate_label(&uk_secret).is_ok(),
+            message: "UK DEMO SECRET + LOCSEN passes SPIF validation".into(),
+        });
+        Self::finalize_suite("XML-SPIF Policy Ingestion", tests)
     }
 
     fn finalize_suite(name: &str, tests: Vec<AdatpTestResult>) -> AdatpSuiteResult {

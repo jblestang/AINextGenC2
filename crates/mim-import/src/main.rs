@@ -1,9 +1,8 @@
-use std::fs;
-use std::io::Read;
-use std::path::PathBuf;
 use std::process;
 
-use mim_import::{ImportOptions, OwlImporter, OwlModel};
+use mim_import::{
+    load_owl_source, ImportOptions, OwlImporter, OwlModel, MIMWORLD_JC3IEDM_OWL_URL,
+};
 use mim_model::MimManifest;
 
 fn main() {
@@ -16,28 +15,38 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
     let mut owl_path = None;
-    let mut output_path = PathBuf::from("models/mim-full-5.1.json");
-    let mut merge_seed_path = Some(PathBuf::from("models/mim-core-5.1.json"));
+    let mut source = None;
+    let mut output_path = std::path::PathBuf::from("models/mim-full-5.1.json");
+    let mut merge_seed_path = Some(std::path::PathBuf::from("models/mim-core-5.1.json"));
 
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--owl" => owl_path = args.next(),
-            "--output" => output_path = PathBuf::from(args.next().ok_or("missing --output value")?),
-            "--merge" => merge_seed_path = Some(PathBuf::from(args.next().ok_or("missing --merge value")?)),
+            "--source" => source = args.next(),
+            "--output" => output_path = std::path::PathBuf::from(args.next().ok_or("missing --output value")?),
+            "--merge" => merge_seed_path = Some(std::path::PathBuf::from(args.next().ok_or("missing --merge value")?)),
             "--no-merge" => merge_seed_path = None,
             other => return Err(format!("unknown argument: {other}").into()),
         }
     }
 
-    let owl_path = owl_path.ok_or("missing required --owl <path>")?;
-    let mut file = fs::File::open(&owl_path)?;
-    let mut data = String::new();
-    file.read_to_string(&mut data)?;
+    let owl_data = match (source.as_deref(), owl_path.as_deref()) {
+        (Some(src), None) => load_owl_source(src)?,
+        (None, Some(path)) => load_owl_source(path)?,
+        (Some("mimworld"), Some(path)) => std::fs::read_to_string(path)?,
+        _ => return Err(format!(
+            "specify --source mimworld or --owl <path> (mimworld JC3IEDM: {MIMWORLD_JC3IEDM_OWL_URL})"
+        ).into()),
+    };
 
-    let owl = OwlModel::parse_xml(&data)?;
+    let owl = OwlModel::parse_xml(&owl_data)?;
     let mut options = ImportOptions::default();
+    if source.as_deref() == Some("mimworld") || source.as_deref() == Some("mimworld:jc3iedm") {
+        options.authoritative_mimworld = true;
+        options.description = "Imported from mimworld.org JC3IEDM OWL (authoritative MIP source)".into();
+    }
     if let Some(seed_path) = merge_seed_path {
-        let seed_data = fs::read_to_string(seed_path)?;
+        let seed_data = std::fs::read_to_string(seed_path)?;
         options.merge_seed = Some(MimManifest::from_json(&seed_data)?);
     }
 
@@ -46,9 +55,9 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let json = serde_json::to_string_pretty(&manifest)?;
     if let Some(parent) = output_path.parent() {
-        fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent)?;
     }
-    fs::write(&output_path, json)?;
+    std::fs::write(&output_path, json)?;
 
     println!("Imported manifest written to {}", output_path.display());
     println!(

@@ -10,6 +10,11 @@ pub enum LabelingDimension {
     PolicyPlane,
     NatoPolicy,
     AssertionBinding,
+    CapcoPolicy,
+    UkPolicy,
+    SpifIngestion,
+    AuditTrail,
+    FipsCrypto,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

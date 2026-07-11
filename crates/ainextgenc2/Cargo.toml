@@ -27,6 +27,9 @@ mim-transport = { workspace = true }
 mim-policy = { workspace = true }
 mim-dcs = { workspace = true }
 mim-stanag4774 = { workspace = true }
+mim-stanag4778 = { workspace = true }
+mim-crypto = { workspace = true }
+mim-audit = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

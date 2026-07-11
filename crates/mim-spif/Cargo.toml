@@ -1,0 +1,15 @@
+[package]
+name = "mim-spif"
+description = "XML-SPIF policy ingestion and label validation (ADatP-4774.1)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mim-core = { workspace = true }
+mim-labeling = { workspace = true }
+quick-xml = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }

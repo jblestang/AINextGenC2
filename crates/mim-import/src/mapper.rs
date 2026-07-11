@@ -23,6 +23,8 @@ pub struct ImportOptions {
     pub min_actions: u32,
     pub min_code_lists: u32,
     pub merge_seed: Option<MimManifest>,
+    /// When true, import only OWL-derived classes (no synthetic padding).
+    pub authoritative_mimworld: bool,
 }
 
 impl Default for ImportOptions {
@@ -37,6 +39,7 @@ impl Default for ImportOptions {
             min_actions: 500,
             min_code_lists: 400,
             merge_seed: None,
+            authoritative_mimworld: false,
         }
     }
 }
@@ -74,7 +77,7 @@ impl OwlImporter {
             .collect();
 
         // Ensure minimum object count by including additional non-action classes.
-        if object_names.len() < options.min_objects as usize {
+        if !options.authoritative_mimworld && object_names.len() < options.min_objects as usize {
             for name in owl.class_names() {
                 if object_names.len() >= options.min_objects as usize {
                     break;
@@ -86,7 +89,7 @@ impl OwlImporter {
         }
 
         // Pad actions to target by promoting event-like classes.
-        if action_names.len() < options.min_actions as usize {
+        if !options.authoritative_mimworld && action_names.len() < options.min_actions as usize {
             for name in owl.class_names() {
                 if action_names.len() >= options.min_actions as usize {
                     break;
@@ -105,7 +108,9 @@ impl OwlImporter {
             }
         }
 
-        pad_class_coverage(owl, &mut object_names, &mut action_names, &options);
+        if !options.authoritative_mimworld {
+            pad_class_coverage(owl, &mut object_names, &mut action_names, &options);
+        }
 
         let mut taxonomy = Vec::new();
         let mut elements = Vec::new();

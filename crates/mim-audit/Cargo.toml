@@ -1,0 +1,18 @@
+[package]
+name = "mim-audit"
+description = "Immutable audit trail for DCS guard and policy decisions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mim-core = { workspace = true }
+mim-labeling = { workspace = true }
+mim-crypto = { workspace = true }
+chrono = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { workspace = true }

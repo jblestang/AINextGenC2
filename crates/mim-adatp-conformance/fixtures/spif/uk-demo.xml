@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spif xmlns="urn:iso:std:iso:29008:2011:confidentialitymetadatalabel">
+  <securityPolicyId>
+    <identifier URL="1.2.826.0.1.6726289.0.2">DEMO-UK</identifier>
+  </securityPolicyId>
+  <securityClassifications>
+    <securityClassification><name>OFFICIAL</name></securityClassification>
+    <securityClassification><name>OFFICIAL-SENSITIVE</name></securityClassification>
+    <securityClassification><name>SECRET</name></securityClassification>
+    <securityClassification><name>TOP SECRET</name></securityClassification>
+  </securityClassifications>
+  <securityCategories>
+    <securityCategory type="restrictive">
+      <name>Handling</name>
+      <categoryName>LOCSEN</categoryName>
+      <categoryName>UK EYES ONLY</categoryName>
+    </securityCategory>
+    <securityCategory type="permissive">
+      <name>Releasable To</name>
+      <categoryName>UK</categoryName>
+      <categoryName>NATO</categoryName>
+      <categoryName>EU</categoryName>
+    </securityCategory>
+  </securityCategories>
+  <validations>
+    <validation>
+      <classification>SECRET</classification>
+      <categoryName>Handling</categoryName>
+      <requiredValue>LOCSEN</requiredValue>
+    </validation>
+  </validations>
+</spif>

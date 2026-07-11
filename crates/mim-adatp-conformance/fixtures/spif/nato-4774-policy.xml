@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spif xmlns="urn:iso:std:iso:29008:2011:confidentialitymetadatalabel">
+  <versioninfo>
+    <spifversion>XML-SPIF</spifversion>
+    <issuingauthority>NATO</issuingauthority>
+  </versioninfo>
+  <securityPolicyId>
+    <identifier URL="urn:oid:2.16.840.1.101.2.3.6.1.31778.102.25">NATO</identifier>
+  </securityPolicyId>
+  <securityClassifications>
+    <securityClassification><name>UNCLASSIFIED</name></securityClassification>
+    <securityClassification><name>NATO UNCLASSIFIED</name></securityClassification>
+    <securityClassification><name>RESTRICTED</name></securityClassification>
+    <securityClassification><name>NATO RESTRICTED</name></securityClassification>
+    <securityClassification><name>CONFIDENTIAL</name></securityClassification>
+    <securityClassification><name>NATO CONFIDENTIAL</name></securityClassification>
+    <securityClassification><name>NATO/EAPC CONFIDENTIAL</name></securityClassification>
+    <securityClassification><name>NATO/KFOR CONFIDENTIAL</name></securityClassification>
+    <securityClassification><name>SECRET</name></securityClassification>
+    <securityClassification><name>NATO SECRET</name></securityClassification>
+    <securityClassification><name>COSMIC TOP SECRET</name></securityClassification>
+  </securityClassifications>
+  <securityCategories>
+    <securityCategory type="permissive">
+      <name>Releasable to</name>
+    </securityCategory>
+  </securityCategories>
+</spif>

@@ -1,11 +1,14 @@
+use mim_audit::AuditLog;
 use mim_labeling::SecurityDomain;
 use mim_policy::{
     AccessOperation, PolicyEnforcementPoint, PolicyError, PolicyInformationPoint,
     SubjectAttributes,
 };
 use mim_runtime::MimInstance;
+use mim_stanag4778::RestEnvelope;
 
 use crate::broker::ExchangeBroker;
+use crate::envelope::unwrap_put_object;
 use crate::error::{TransportError, TransportResult};
 use crate::message::{
     DeleteObjectRequest, DeleteObjectResponse, GetByFilterRequest, GetByFilterResponse,
@@ -84,6 +87,21 @@ impl SecuredExchangeBroker {
             )
             .map_err(map_policy_error)?;
         self.inner.put_object(request)
+    }
+
+    /// Accept a STANAG 4778 REST envelope (NMBS assertion binding required).
+    pub fn put_object_enveloped(
+        &mut self,
+        envelope: RestEnvelope,
+        verifying_key: &mim_crypto::VerifyingKey,
+    ) -> TransportResult<PutObjectResponse> {
+        let request = unwrap_put_object(&envelope, verifying_key)?;
+        self.put_object(request)
+    }
+
+    pub fn with_audit(mut self, audit: AuditLog) -> Self {
+        self.pep = self.pep.clone().with_audit(audit);
+        self
     }
 
     pub fn get_by_oid(&self, request: GetByOidRequest) -> TransportResult<GetByOidResponse> {
