@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  STANAG 4774 / ADatP-4774 confidentiality metadata label schema.
+  Namespace: urn:nato:stanag:4774:confidentialitymetadatalabel:1:0
+  Structural profile aligned with ADatP Edition A Version 1 and NATO Table 17 vectors.
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+           targetNamespace="urn:nato:stanag:4774:confidentialitymetadatalabel:1:0"
+           xmlns:cl="urn:nato:stanag:4774:confidentialitymetadatalabel:1:0"
+           elementFormDefault="qualified">
+
+  <xs:element name="ConfidentialityLabel" type="cl:ConfidentialityLabelType"/>
+  <xs:element name="originatorConfidentialityLabel" type="cl:ConfidentialityLabelType"/>
+  <xs:element name="metadataConfidentialityLabel" type="cl:ConfidentialityLabelType"/>
+  <xs:element name="alternativeConfidentialityLabel" type="cl:ConfidentialityLabelBaseType"/>
+
+  <xs:complexType name="ConfidentialityLabelType">
+    <xs:complexContent>
+      <xs:extension base="cl:ConfidentialityLabelBaseType">
+        <xs:attribute name="ReviewDateTime" type="xs:dateTime" use="optional"/>
+        <xs:attribute name="Id" type="xs:ID" use="optional"/>
+      </xs:extension>
+    </xs:complexContent>
+  </xs:complexType>
+
+  <xs:complexType name="ConfidentialityLabelBaseType">
+    <xs:sequence>
+      <xs:element name="ConfidentialityInformation" type="cl:ConfidentialityInformationType"/>
+      <xs:element name="alternativeConfidentialityLabel"
+                  type="cl:ConfidentialityLabelBaseType"
+                  minOccurs="0"
+                  maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="CreationTime" type="xs:dateTime" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="ConfidentialityInformationType">
+    <xs:sequence>
+      <xs:element name="PolicyIdentifier" type="cl:PolicyIdentifierType"/>
+      <xs:element name="Classification" type="cl:ClassificationType"/>
+      <xs:element name="PrivacyMark" type="cl:PrivacyMarkType" minOccurs="0"/>
+      <xs:element name="Colour" type="cl:ColourType" minOccurs="0"/>
+      <xs:element name="MarkingData" type="cl:MarkingDataType" minOccurs="0"/>
+      <xs:element name="Category" type="cl:CategoryType" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PolicyIdentifierType">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="URL" type="xs:anyURI" use="optional"/>
+        <xs:attribute name="URI" type="xs:anyURI" use="optional"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:simpleType name="ClassificationType">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="PrivacyMarkType">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="ColourType">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="MarkingDataType">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:complexType name="CategoryType">
+    <xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:element name="GenericValue" type="xs:string"/>
+        <xs:element name="GenericValues" type="xs:string"/>
+        <xs:element name="CategoryValue" type="xs:string"/>
+        <xs:element name="IntegerValue" type="xs:integer"/>
+        <xs:element name="BitStringValue" type="xs:string"/>
+      </xs:choice>
+    </xs:sequence>
+    <xs:attribute name="TagName" type="xs:string" use="required"/>
+    <xs:attribute name="Type" type="cl:CategoryKindType" use="required"/>
+  </xs:complexType>
+
+  <xs:simpleType name="CategoryKindType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="RESTRICTIVE"/>
+      <xs:enumeration value="PERMISSIVE"/>
+      <xs:enumeration value="INFORMATIVE"/>
+      <xs:enumeration value="restrictive"/>
+      <xs:enumeration value="permissive"/>
+      <xs:enumeration value="informative"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+</xs:schema>

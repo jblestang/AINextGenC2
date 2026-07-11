@@ -1,0 +1,1441 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml-stylesheet href="/stylesheets/xsd.xsl" type="text/xsl"?>
+
+<xs:schema
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:xml="http://www.w3.org/XML/1998/namespace"
+  xmlns="http://www.xmlspif.org/spif"
+  xmlns:spif="http://www.xmlspif.org/spif"
+  targetNamespace="http://www.xmlspif.org/spif"
+  elementFormDefault="unqualified" attributeFormDefault="unqualified"
+  xml:lang="en">
+
+  <xs:annotation>
+    <xs:documentation>
+      <div>
+        <h1>About the SPIF namespace</h1>
+
+        <div class="bodytext">
+          <p>
+            This schema document describes the Security Policy Information File (SPIF) namespace, in a form
+            suitable for import by other schema documents.
+          </p>
+          <p>A SPIF describes a security labelling policy including:</p>
+          <ul>
+            <li>Policy - its name and other unique identifiers</li>
+            <li>Classifications - the valid classifications within the policy and their associated values for use within a security label and to support the access control decision function</li>
+            <li>Security Categories - the valid categories with the policy  and their associated values for use within a security label and to support the access control decision function</li>
+            <li>Relationships - the relationships (e.g. required, excluded) between categories and classification and other categories</li>
+            <li>Equivalency - the equivalent values of classifications and categories in another policy</li>
+            <li>Marking - instructions how to generate a marking from classification and category values</li>
+            <li>Input - directions for how the user may enter free-form category values</li>
+          </ul>
+          <p>A SPIF can be used to promote the consistent use of security labels and marking and may be used, for example, to</p>
+          <ul>
+            <li>generate a semantically valid security label</li>
+            <li>generate a semantically valid security clearance</li>
+            <li>verify the validity of a security label</li>
+            <li>generate a corresponding marking</li>
+            <li>generate an equivalent security label in an alternate policy</li>
+          </ul>
+          <p>
+            See <a href="http://www.xmlspif.org/">http://www.xmlspif.org</a> for further information.
+          </p>
+        </div>
+      </div>
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:import namespace="http://www.w3.org/XML/1998/namespace" schemaLocation="xml.xsd"/>
+
+  <!-- Version -->
+  <xs:simpleType name="version">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The version of the schema:</p>
+          <ul>
+            <li>1.0 - the original schema derived from SDN.801</li>
+            <li>
+              2.0 - updated to support for:
+              <ul>
+                <li>Validity period for the whole SPIF and individual category values</li>
+                <li>MarkingData and MarkingQualifier for privacyMark</li>
+                <li>MarkingData and MarkingQualifier for privacyMarks</li>
+                <li>MarkingData and MarkingQualifier for securityClassifications</li>
+                <li>Constrain the number of privacy mark values that can be selected</li>
+                <li>MarkingQualifier with tagCategory</li>
+                <li>Better constraints for the number of allowed tags from a tagset</li>
+                <li>DateFormat for Date category values</li>
+                <li>MarkingData and MarkingQualifier for an ObjectIDData</li>
+                <li>MarkingData and MarkingQualifier for a SPIF</li>
+                <li>Required categories for an equivalentPolicy</li>
+                <li>Required categories for an equivalentClassification</li>
+                <li>Equivalency between tag sets and allow required categories for a equivalentTagSet</li>
+              </ul>
+            </li>
+            <li>
+              2.1 - small update for :
+              <ul>
+                <li>
+                  Additional <a href="#type_markingCode">markingCode</a> for policy annotation.
+                </li>
+                <li>Additional schema constraints</li>
+              </ul>
+            </li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="1.0" />
+      <xs:enumeration value="2.0" />
+      <xs:enumeration value="2.1" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Object Identifier (OID) -->
+  <xs:simpleType name="oid">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An Object IDentifier as a string, for example 1.3.26.1.</p>
+          <p>
+            For further information see X.680 or <a href="www.oid-info.com">www.oid-info.com</a>
+          </p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <!-- v2.0: Bug fix to pattern -->
+      <xs:pattern value="[0-2](\.[0-9]+)+" />
+      <!-- End of v2.0 addition -->
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Label and Certificate Value (Integer) -->
+  <xs:simpleType name="lacvInt">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The Label and Certificate Value as an integer member type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:integer" />
+  </xs:simpleType>
+  <!-- Label and Certificate Value (String) -->
+  <xs:simpleType name="lacvString">
+    <xs:annotation>
+      <xs:documentation>
+        <xs:documentation>
+          <div class="bodytext">
+            <p>The Label and Certificate Value as a string member type.</p>
+            <p>Typically used for category values rather than classifications.</p>
+          </div>
+        </xs:documentation>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string" />
+  </xs:simpleType>
+  <!-- Label and Certificate Value -->
+  <xs:simpleType name="lacv">
+    <xs:annotation>
+      <xs:documentation>
+        <xs:documentation>
+          <div class="bodytext">
+            <p>The Label and Certificate Value type, which is the union of the lacvInt and lacvString types.</p>
+            <p>This value is encoded within the classification and security categories in a security label or a security clearance (which may be held within a certificate).</p>
+          </div>
+        </xs:documentation>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:union memberTypes="lacvInt lacvString" />
+  </xs:simpleType>
+  <!-- v2.0: new types -->
+  <xs:simpleType name="selectionInt">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The selection integer member type, which allows the specification of the maximum number of selections to be made.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:integer" />
+  </xs:simpleType>
+  <xs:simpleType name="selectionString">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The selection string member type, which have specific values: </p>
+          <ul>
+            <li>unbounded - any number of selections can be made.</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="unbounded" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:simpleType name="selection">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The selection type, which is the union of the selectionInt and selectionString types, allows the specification of the maximum number of category values that can be made.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:union memberTypes="selectionInt selectionString" />
+  </xs:simpleType>
+  <xs:simpleType name="equivalencyAction">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The equivalencyAction type indicates the action to be performed on a category value when mapping a security label to an equivalent policy.</p>
+          <p>The values are: </p>
+          <ul>
+            <li>discard - it is acceptable that the original category value has no mapping. The tagSetId and lacv will not be used.</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="discard"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- End of v2.0 additions -->
+  <!-- Operation -->
+  <xs:simpleType name="operation">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>
+            The operation type indicates how many of the categories within an <a href="#type_optionalCategoryGroup">optionalCategoryGroup</a> are required.
+          </p>
+          <p>The values are: </p>
+          <ul>
+            <li>onlyOne - only one of the values identified within the optionalCategoryGroup are required.</li>
+            <li>oneOrMore - one or more of the values identified within the optionalCategoryGroup are required.</li>
+            <li>all - all of the values identified within the optionalCategoryGroup are required.</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="onlyOne" />
+      <xs:enumeration value="oneOrMore" />
+      <xs:enumeration value="all" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- User Input -->
+  <xs:simpleType name="userInput">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>
+            The format of a <a href="#tag_tagCategory">tagCategory</a> value that can be entered by the user.
+          </p>
+          <p>The values are: </p>
+          <ul>
+            <li>string - an arbitrary string</li>
+            <li>integer - an unsigned integer</li>
+            <li>date - a date in the format defined by the dateFormat attribute. </li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="string" />
+      <xs:enumeration value="integer" />
+      <xs:enumeration value="date" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Classification Hierarchy -->
+  <xs:simpleType name="hierarchy">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>
+            The hierarchy type represents the hierarchical value of a classification, as opposed to the value that will be placed into a security label or certificate (the lacv).
+          </p>
+          <p>
+            The hierarchy value is used to determine the dominance of classification values, for example, when making an access control decision.
+          </p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:integer" />
+  </xs:simpleType>
+  <!-- Classification  Name -->
+  <xs:simpleType name="className">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Classification name - the name of a classification (limited to a maximum of 256 characters).</p>
+          <p>The classification name is the default marking phrase for the classification.</p>
+          <p>The classification name is also used to identify any classifications that are excluded by a tagCategory.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="256" />
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="excludedClass" type="className">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a className type which is referenced by the tagCategory type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+
+  <!-- Policy Name -->
+  <xs:simpleType name="policyName">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Policy name - the name of a policy (limited to a maximum of 256 characters).</p>
+          <p>The policy name is also used to identify the policy for equivalent policies, classifications and categoryTags.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="256" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Marking Phrase -->
+  <xs:simpleType name="markingPhrase">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Marking phrase - a string (limited to a maximum of 256 characters) that will be used in generation a marking from a security label.</p>
+          <p>Multiple marking phrases may be concatenated to generate the final marking, and different marking phrases may be used in different locations.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="256" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Tag Set Name -->
+  <xs:simpleType name="tagSetName">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Tag Set Name - the name (limited to a maximum of 256 characters) of a set of tags (or categories).</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:maxLength value="256" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Generalised Time -->
+  <xs:simpleType name="genTime">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Generalised Time - a string (limited to a maximum of 256 characters) that represents a time.</p>
+          <p>It may take one of three forms:</p>
+          <ul>
+            <li>Local time - `YYYYMMDDHH[MM[SS[.fff]]]', where the optional fff is accurate to three decimal places.</li>
+            <li>Universal time (UTC time, or Zulu time) - `YYYYMMDDHH[MM[SS[.fff]]]Z'.</li>
+            <li>Offset from Universal time. `YYYYMMDDHH[MM[SS[.fff]]]+-HHMM'</li>
+          </ul>
+          <p>Note that these formats are not currently enforced within the type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string" />
+  </xs:simpleType>
+  <!-- Marking Code -->
+  <xs:simpleType name="markingCode">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Marking Code - the location to display a marking phrase.</p>
+          <p>The values are:</p>
+          <ul>
+            <li>pageTop - Display on top of the page or viewing area e.g. header.</li>
+            <li>pageBottom - Display on bottom of the page or viewing area e.g. footer.</li>
+            <li>pageTopBottom - Display on top and bottom of the page or viewing area e.g. header and footer.</li>
+            <li>documentStart - Display at the start of document e.g. cover page</li>
+            <li>documentEnd - Display at the end of document e.g. end page</li>
+            <li>noNameDisplay - Do not display of the classification or security category name; only display the marking phrase.</li>
+            <li>noMarkingDisplay - Do not display marking phrase on output; display marking phrase only during operator input</li>
+            <li>suppressClassName - Do not display of the classification name, but display security category.</li>
+            <li>firstLineOfText - Display on the first line of the body text e.g. the body text of an email message.</li>
+            <li>lastLineOfText - Display on the last line of the body text e.g. the body text of an email message.</li>
+            <li>subject - The subject of an email message.</li>
+            <li>xHeader - The header of an email message. The actual header name is held within the prefix qualifier.</li>
+            <li>portionMarking - Display on a portion of a document</li>
+            <li>inputTitle - Display a title, or label, on a GUI element. The title will be held within the prefix qualifier.</li>
+            <li>waterMark - Display as a watermark behind the main text of a document.</li>
+            <li>replacePolicy - Replace the policy marking phrase.</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="pageTop" />
+      <xs:enumeration value="pageBottom" />
+      <xs:enumeration value="pageTopBottom" />
+      <xs:enumeration value="documentStart" />
+      <xs:enumeration value="documentEnd" />
+      <xs:enumeration value="noNameDisplay" />
+      <xs:enumeration value="noMarkingDisplay" />
+      <xs:enumeration value="suppressClassName" />
+      <!-- v2.0: additional marking codes -->
+      <xs:enumeration value="firstLineOfText" />
+      <xs:enumeration value="lastLineOfText" />
+      <xs:enumeration value="subject" />
+      <xs:enumeration value="xHeader" />
+      <xs:enumeration value="portionMarking" />
+      <xs:enumeration value="inputTitle" />
+      <xs:enumeration value="waterMark" />
+      <!-- End of v2.0 additions -->
+      <!-- v2.1: additional marking code -->
+      <xs:enumeration value="replacePolicy" />
+      <!-- End of v2.1 additions -->
+    </xs:restriction>
+  </xs:simpleType>
+  <xs:element name="code" type="markingCode">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a markingCode type which is referenced by the markingData type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Tag Type -->
+  <xs:simpleType name="tagType">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Tag Type - the type of tag category.</p>
+          <p>The values are:</p>
+          <ul>
+            <li>notApplicable - not applicable</li>
+            <li>restrictive - bit set of tag categories where all of the selected tag categories are required in the security clearance.</li>
+            <li>enumerated - integer set of tag categories, with tag further refined by the enumType.</li>
+            <li>permissive - bit set of tag categories where at least one of the selected tag categories are required in the security clearance</li>
+            <li>tagType7 - (or informative) tag categories;  informative tag categories are not used in the access control decision function.</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="notApplicable" />
+      <xs:enumeration value="restrictive" />
+      <xs:enumeration value="enumerated" />
+      <xs:enumeration value="permissive" />
+      <xs:enumeration value="tagType7" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Enumerated Type -->
+  <xs:simpleType name="enumType">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Enum Type - the type of an enumerated tag category.</p>
+          <p>The values are:</p>
+          <ul>
+            <li>restrictive - tag categories where all of the selected tag categories are required in the security clearance.</li>
+            <li>permissive - tag categories where at least one of the selected tag categories are required in the security clearance</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="restrictive" />
+      <xs:enumeration value="permissive" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Tag Type 7 Encoding -->
+  <xs:simpleType name="tag7Encoding">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Tag7 Encoding - the type of tagType7 (informative) tagType.</p>
+          <p>The same value must be used for all tagType7 tag categories within a category tag set.</p>
+          <p>The values are:</p>
+          <ul>
+            <li>bitSetAttributes - bit set values </li>
+            <li>securityAttributes - integer set value c.f. enumerated permissive or restrictive</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="bitSetAttributes" />
+      <xs:enumeration value="securityAttributes" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Qualifier Code -->
+  <xs:simpleType name="qualifierCode">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Qualifier Code - indicates how a markingQualifier is to be applied</p>
+          <p>The values are:</p>
+          <ul>
+            <li>prefix - as a prefix to the values</li>
+            <li>suffix - as a suffix to the values</li>
+            <li>separator - as a separator between the values</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="prefix" />
+      <xs:enumeration value="suffix" />
+      <xs:enumeration value="separator" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Applied -->
+  <xs:simpleType name="applied">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Use this value to indicate that the equivalency may be applied when considering the security clearance of the recipient.</p>
+          <p>The values are:</p>
+          <ul>
+            <li>encrypt - by the originator (e.g. before sending an email to the recipient)</li>
+            <li>decrypt - by the recipient (e.g. before opening an email)</li>
+            <li>both - by both the originator (e.g. before sending an email to the recipient) and recipient (e.g. before opening an email)</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="encrypt"/>
+      <xs:enumeration value="decrypt"/>
+      <xs:enumeration value="both"/>
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Colour (W3C) -->
+  <xs:simpleType name="colorW3C">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The color W3C member type, which allows the specification of a color using a standard W3C color name.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="aqua" />
+      <xs:enumeration value="black" />
+      <xs:enumeration value="blue" />
+      <xs:enumeration value="fuschia" />
+      <xs:enumeration value="gray" />
+      <xs:enumeration value="green" />
+      <xs:enumeration value="lime" />
+      <xs:enumeration value="maroon" />
+      <xs:enumeration value="navy" />
+      <xs:enumeration value="olive" />
+      <xs:enumeration value="purple" />
+      <xs:enumeration value="red" />
+      <xs:enumeration value="silver" />
+      <xs:enumeration value="teal" />
+      <xs:enumeration value="white" />
+      <xs:enumeration value="yellow" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Colour (RGB) -->
+  <xs:simpleType name="colorRGB">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The color RGB member type, which allows the specification of a color using Red Green Blue (RGB) values.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:restriction base="xs:string">
+      <xs:pattern value="#[0-9a-fA-F]{6}" />
+    </xs:restriction>
+  </xs:simpleType>
+  <!-- Colour -->
+  <xs:simpleType name="color">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The color type, which is the union of the colorW3C and colorRGB types, allows the specification of a color.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:union memberTypes="colorW3C colorRGB" />
+  </xs:simpleType>
+  <!-- v2.0: validity period for elements of the SPIF -->
+  <xs:attributeGroup name="validity">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>A group of attributes that determine the period in which the associated element is valid</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="notBefore" type="xs:dateTime" />
+    <xs:attribute name="notAfter" type="xs:dateTime" />
+  </xs:attributeGroup>
+  <!-- End of v2.0 addition -->
+  <!-- Optional Category Data -->
+  <xs:complexType name="optionalCategoryData">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An individual category within a tag set or all categories within a tag set.</p>
+          <p>Typically, these will be used to indicate required or excluded categories for classifications or other categories.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>tagSetRef-  the tag set of the category</li>
+            <li>tagType - the tag type of the category</li>
+            <li>enumType- if the tagType is enumerated, indicates the type of the enumerated tag type</li>
+            <li>lacv- the lacv of the specific category</li>
+            <li>all - boolean indicating if all category values in the tag set are being selected</li>
+          </ul>
+          <p>One, and only one, of lacv or all should be present.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="tagSetRef" type="tagSetName" use="required" />
+    <xs:attribute name="tagType" type="tagType" use="required" />
+    <xs:attribute name="enumType" type="enumType" use="optional" />
+    <xs:attribute name="lacv" type="lacv" />
+    <!-- It would be useful to have a "name" attribute as an alternative to the lacv -->
+    <xs:attribute name="all" type="xs:boolean" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="categoryGroup" type="optionalCategoryData">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a optionalCategoryData type which is referenced by the optionalCategoryGroup type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <xs:element name="excludedCategory" type="optionalCategoryData">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a optionalCategoryData type which is referenced by the tagCategory type to indicate the excluded tagCategories.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Optional Category Group -->
+  <xs:complexType name="optionalCategoryGroup">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>A group of categories together with an associated operation that indicates how many should be selected.</p>
+          <p>Typically, this will be used to indicate required categories.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>categoryGroups - one or more category groups</li>
+            <li>operation - indicating how many of the categories identified in the category groups should be selected.</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="categoryGroup" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attribute name="operation" type="operation" use="required"/>
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="requiredCategory" type="optionalCategoryGroup">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of an optionalCategory type which is referenced by the equivalentSecurityTagSet,  equivalentClassification, equivalentPolicy, securityClassification and tagCategory types to indicate the required tagCategories.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Update Info -->
+  <xs:complexType name="updateInfo">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p> The updateInfo type is not currently defined.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:complexType>
+  <xs:element name="updateInfo" type="updateInfo" />
+  <!-- Equivalent Classification -->
+  <xs:complexType name="equivalentClassification">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Identifies the equivalent classification that should be used in an equivalent label in the target policy.</p>
+          <p>It may also include a set of categories from the specified policy that must also be included in the equivalent label.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>policyRef - the policy of the equivalent security label. The policyRef must be declared in the equivalentPolicies.</li>
+            <li>lacv - the lacv of the securityClassification in the policy</li>
+            <li>applied - when the equivalency should be applied.</li>
+            <li>requiredCategories - the categories that must be included in the equivalent security label</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <!-- v2.0: requiredCategories for this classification -->
+    <xs:sequence>
+      <xs:element ref="requiredCategory" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <!-- End of v2.0 addition-->
+    <xs:attribute name="policyRef" type="policyName" use="required" />
+    <xs:attribute name="lacv" type="lacvInt" use="required" />
+    <xs:attribute name="applied" type="applied" use="required" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="equivalentClassification" type="equivalentClassification">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a equivalentClassification type which is referenced by the securityClassification type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Equivalent Policy -->
+  <xs:complexType name="equivalentPolicy">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>Identifies the equivalent policies into which a label from the SPIF policy may be mapped.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>name - the name of the equivalent policy</li>
+            <li>id - the id of the equivalent policy</li>
+            <li>userRefURI - a URI to user documentation on how the equivalent policy should be used</li>
+            <li>docRefURI - a URI that describes the equivalent policy and its associated classification and category values.</li>
+            <li>requiredCategory - categories that must be included in the equivalent label</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <!-- v2.0: requiredCategories when mapping into an equivalent policy. E.g. to include a REL TO relating to original policy -->
+    <xs:sequence>
+      <xs:element ref="requiredCategory" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <!-- End of v2.0 addition -->
+    <xs:attribute name="name" type="policyName" use="required" />
+    <xs:attribute name="id" type="oid" use="required" />
+    <xs:attribute name="userRefURI" type="xs:anyURI" />
+    <xs:attribute name="docRefURI" type="xs:anyURI" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="equivalentPolicy" type="equivalentPolicy">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of an equivalentPolicy type which is referenced by the equivalentPolicies type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Equivalent Policies -->
+  <xs:complexType name="equivalentPolicies">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The set of all equivalent policies for which equivalent classifications and equivalent categories are defined for the SPIF policy.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>equivalentPolicy - one or more equivalent policies</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="equivalentPolicy" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="equivalentPolicies" type="equivalentPolicies">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of an equivalentPolicies type which is referenced by the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Privacy Mark -->
+  <xs:complexType name="privacyMark">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The privacyMark type describes a privacy mark that may be used in security label.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>name - the privacy mark to be used within the label.</li>
+            <li>obsolete - whether the privacy mark can be used in newly created security labels</li>
+            <li>markingData - the marking information for the privacy mark</li>
+            <li>markingQualifier - qualifies the markingData associated with a privacy mark (e.g. it specifies a suffix or a prefix).</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <!-- v2.0: markingData and markingQualifier for privacyMark -->
+    <xs:sequence>
+      <xs:element ref="markingData" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="markingQualifier" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <!-- End of v2.0 addition -->
+    <xs:attribute name="name" type="xs:string" />
+    <xs:attribute name="obsolete" type="xs:boolean" default="false" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="privacyMark" type="privacyMark">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a privacyMark type which is referenced by the privacyMarks type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Privacy Marks -->
+  <xs:complexType name="privacyMarks">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The privacy marks that may be used in the label.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>privacyMark - one or more privacy marks that can be used within the label.</li>
+            <li>markingData - the marking information for the privacy marks</li>
+            <li>markingQualifier - qualifies the markingData associated with a privacy marks (e.g. it specifies a suffix or a prefix).</li>
+            <li>maxSelection - the maximum number of privacy marks that can be selected</li>
+            <li>minSelection - the minimum number of privacy marks that must be selected</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="privacyMark" maxOccurs="unbounded" />
+      <!-- v2.0: marking Data and markingQualifier for privacyMarks-->
+      <xs:element ref="markingData" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="markingQualifier" minOccurs="0" maxOccurs="unbounded" />
+      <!-- End of v2.0 addition -->
+    </xs:sequence>
+    <!-- v2.0: constrain the number of privacy marks -->
+    <xs:attribute name="maxSelection" type="selection" default="unbounded" />
+    <xs:attribute name="minSelection" type="selection" default="unbounded" />
+    <!-- End of v2.0 additions -->
+  </xs:complexType>
+  <xs:element name="privacyMarks" type="privacyMarks">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a privacyMarks type which is referenced by the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Marking Data -->
+  <xs:complexType name="markingData">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The markingData identifies the marking information attached to the data object</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>phrase - the marking phrase</li>
+            <li>code - a sequence of marking codes which identifies where the marking phrase is to be physically applied.</li>
+          </ul>
+          <p>If the markingPhrase is absent, then the markingCode applies to the SecurityClassification classificationName, TagCategories secCategoryName or SPIF securityPolicyId name, depending on the component the markingData is associated with.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="code" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attribute name="phrase" type="markingPhrase" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="markingData" type="markingData">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a markingData type which is referenced by the objectIdData, securityClassifications, securityClassification, tagCategory, privacyMarks and privacyMark types and the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Security Classification -->
+  <xs:complexType name="securityClassification">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The securityClassification identifies a valid classification within the policy</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>name - the name used of the security classification</li>
+            <li>color - the color associated with the security classification (e.g. in which to render a marking)</li>
+            <li>lacv - the label and certificate value (lacv) to be used in the security label</li>
+            <li>hierarchy - the relative level of the classification to other classifications</li>
+            <li>obsolete - whether the classification value can be used in newly created security labels</li>
+            <li>equivalentClassification - the equivalent classification in a different security policy</li>
+            <li>markingData - the marking information for the classification</li>
+            <li>markingQualifier - qualifies the markingData associated with a classification (e.g. it specifies a suffix or a prefix).</li>
+            <li>requiredCategory - the category values that must also be present if this classification is selected.</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="equivalentClassification" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="markingData" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="markingQualifier" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="requiredCategory" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attribute name="name" type="className" use="required" />
+    <xs:attribute name="color" type="color" />
+    <xs:attribute name="lacv" type="lacvInt" use="required" />
+    <xs:attribute name="hierarchy" type="hierarchy" use="required" />
+    <xs:attribute name="obsolete" type="xs:boolean" default="false" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="securityClassification" type="securityClassification">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a securityClassification type which is referenced by the securityClassifications type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Security Classifications -->
+  <xs:complexType name="securityClassifications">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The securityClassifications type identifies the valid security classifications within the policy</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>securityClassification - a set of security classifications defined within the policy</li>
+            <li>markingData - the marking information for the security classifications</li>
+            <li>markingQualifier - qualifies the markingData associated with security classifications (e.g. it specifies a suffix or a prefix)</li>
+            <li>name - name of the set of security classifications</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="securityClassification" maxOccurs="unbounded" />
+      <!-- v2.0: markingData and markingQualifiers for securityClassifications -->
+      <xs:element ref="markingData" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element ref="markingQualifier" minOccurs="0" maxOccurs="unbounded" />
+      <!-- End of v2.0 addition -->
+    </xs:sequence>
+    <!-- v2.0: name for the classifications and allow any other attribute to be associated with them -->
+    <xs:attribute name="name" type="xs:string"/>
+    <xs:anyAttribute/>
+    <!-- End of v2.0 addition -->
+  </xs:complexType>
+  <xs:element name="securityClassifications" type="securityClassifications">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a securityClassifications type which is referenced by the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Equivalent Security Category Tag -->
+  <xs:complexType name="equivalentSecCategoryTag">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The equivalentSecCategoryTag type identifies an equivalent secCategoryTag in a different security policy</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>policyRef - the policy of the equivalent security label. The policyRef must be declared in the equivalentPolicies.</li>
+            <li>tagSetId - the id of the equivalent securityCategoryTagSet </li>
+            <li>tagType - the tag type of the equivalent securityCategoryTag within the equivalent securityCategoryTagSet</li>
+            <li>enumType - the enumerated type of the equivalent securityCategoryTag within the equivalent securityCategoryTagSet if the tagType=enumerated</li>
+            <li>lacv - the label and certificate value of the equivalent tagCategory</li>
+            <li>applied - when the equivalency should be applied (e.g. on origination, on reception) </li>
+            <li>action - the action to be performed on the equivalent tagCategory</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="policyRef" type="policyName" use="required" />
+    <xs:attribute name="tagSetId" type="oid" use="required" />
+    <xs:attribute name="tagType" type="tagType" use="required" />
+    <xs:attribute name="enumType" type="enumType" />
+    <xs:attribute name="lacv" type="lacv" use="required" />
+    <xs:attribute name="applied" type="applied" use="required" />
+    <!-- v2.0: action to be performed during equivalency -->
+    <xs:attribute name="action" type="equivalencyAction" />
+    <!-- End of v2.0 addition -->
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="equivalentSecCategoryTag" type="equivalentSecCategoryTag">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of an equivalentSecCategoryTag type which is referenced by the tagCategory type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Tag Category -->
+  <xs:complexType name="tagCategory">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The tagCategory type identifies a tagCategory in a given securityCategoryTag. For example, a value within the "Releasable To" securityCategoryTag.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>equivalentSecCategoryTag - the equivalent categoryTags in other security policies</li>
+            <li>markingData - the marking information for the tagCategory</li>
+            <li>markingQualifier - qualifies the markingData</li>
+            <li>excludedClass - securityClassifications which must not be selected if this tagCategory is selected</li>
+            <li>requiredCategory - tagCategories that must be selected if this tagCategory is selected</li>
+            <li>excludedCategory - tagCategories that must not be selected with this tagCategory is selected</li>
+            <li>name - the name of the tagCategory</li>
+            <li>lacv - the label and certificate value of the tagCategory </li>
+            <li>userInput - allows the user to specify a value of a given format</li>
+            <li>dateFormat - the format of the date to use if userInput=date</li>
+            <li>requiredClass - securityClassification that must be selected if the tagCategory is selected</li>
+            <li>obsolete - whether the tagCategory can be used in newly created security labels</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="equivalentSecCategoryTag" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="markingData" minOccurs="0" maxOccurs="unbounded" />
+      <!-- v2.0: associate markingQualifiers with tagCategories -->
+      <xs:element ref="markingQualifier" minOccurs="0" maxOccurs="unbounded" />
+      <!-- End of v2.0 addition -->
+      <xs:element ref="excludedClass" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="requiredCategory" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="excludedCategory" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required" />
+    <xs:attribute name="lacv" type="lacv" use="required" />
+    <xs:attribute name="userInput" type="userInput" />
+    <xs:attribute name="requiredClass" type="className" />
+    <xs:attribute name="obsolete" type="xs:boolean" default="false" />
+    <!-- v2.0: format of dates to be entered -->
+    <xs:attribute name="dateFormat" type="xs:string">
+      <xs:annotation>
+        <xs:documentation>Format as defined in ISO 8601</xs:documentation>
+      </xs:annotation>
+    </xs:attribute>
+    <xs:attributeGroup ref="validity" />
+    <!-- End of v2.0 addition -->
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="tagCategory" type="tagCategory">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of an tagCategory type which is referenced by the securityCategoryTag type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Qualifier -->
+  <xs:complexType name="qualifier">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The qualifier type identifies a set of qualifiers.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>markingQualifier - the marking phrase to be used</li>
+            <li>qualifierCode - where the markingQualifier is to be applied</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:attribute name="markingQualifier" type="markingPhrase" use="required" />
+    <xs:attribute name="qualifierCode" type="qualifierCode" use="required" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="qualifier" type="qualifier">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a qualifier type which is referenced by the markingQualifier type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Marking Qualifier -->
+  <xs:complexType name="markingQualifier">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The markingQualifier type contains information that qualifies the markingData associated with a data object (e.g. it specifies a suffix or a prefix). </p>
+          <p>It consists of:</p>
+          <ul>
+            <li>qualifier - a qualifier (e.g. a suffix, prefix or separator)</li>
+            <li>markingCode - a code which identifies where the qualifier is to be applied.</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="qualifier" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attribute name="markingCode" type="markingCode" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="markingQualifier" type="markingQualifier">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a markingQualifier type which is referenced by the objectIdData, securityClassifications, securityClassification, securityCategoryTag, tagCategory, privacyMarks and privacyMark types and the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Security Category Tag -->
+  <xs:complexType name="securityCategoryTag">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The securityCategoryTag type provides information to qualify the markingData associated with a data object (e.g. it specifies a suffix or a prefix). </p>
+          <p>It consists of:</p>
+          <ul>
+            <li>tagCategory - a set of tagCategories </li>
+            <li>markingQualifier - qualifies the markingData associated with the tagCategories (e.g. it specifies a separator between tagCategories).</li>
+            <li>name - the name of the securityCategoryTag</li>
+            <li>tagType - the type of the tagCategory</li>
+            <li>enumType - the type of the tagCategory if tagType=enumerated</li>
+            <li>tag7Encoding - the encoding of tagCategory values if tagType=tagType7 (informative)</li>
+            <li>singleSelection - whether only a single may be selected (equivalent to maxSelection=1)</li>
+            <li>maxSelection - the maximum number of tagCategories that may be selected</li>
+            <li>minSelection - the minimum number of tagCategories that must be selected</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="tagCategory" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="markingQualifier" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" />
+    <xs:attribute name="tagType" type="tagType" use="required" />
+    <xs:attribute name="enumType" type="enumType" />
+    <xs:attribute name="tag7Encoding" type="tag7Encoding" />
+    <xs:attribute name="singleSelection" type="xs:boolean" default="false" />
+    <!-- v2.0: Constrain the number of selections (beyond one or any) -->
+    <xs:attribute name="maxSelection" type="selection" default="unbounded" />
+    <xs:attribute name="minSelection" type="selection" default="unbounded" />
+    <!-- End of v2.0 addition -->
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="securityCategoryTag" type="securityCategoryTag">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a securityCategoryTag type which is referenced by the securityCategoryTagSet type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Security Category Tag Set -->
+  <xs:complexType name="securityCategoryTagSet">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The securityCategoryTagSet type contains information about a given securityCategoryTagSet (e.g. "Relesable To"), including the allowed values.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>securityCategoryTag - the set of securityCategoryTags</li>
+            <li>equivalentSecurityCategoryTagSet - the equivalent securityCategoryTagSet in a different policy</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="securityCategoryTag" maxOccurs="unbounded" />
+      <!-- v2.0: mark equivalency between tag sets (e.g. REL TO, EYES ONLY) and allows categories to be added to equivalent label based on tag set presence (e.g. add REL TO NATO if a REL TO tagset is present) -->
+      <xs:element ref="equivalentSecurityCategoryTagSet" minOccurs="0" maxOccurs="unbounded" />
+      <!-- End of v2.0 addition -->
+    </xs:sequence>
+    <xs:attribute name="name" type="tagSetName" use="required" />
+    <xs:attribute name="id" type="oid" use="required" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="securityCategoryTagSet" type="securityCategoryTagSet">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a securityCategoryTagSet type which is referenced by the securityCategoryTagSets type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- v2.0: to allow requiredCategories for an equivalent policy when a tag set is present (and possibly allow algorithmic mapping of tag sets ) -->
+  <!-- Equivalent Security Category Tag Set -->
+  <xs:complexType name="equivalentSecurityCategoryTagSet">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The equivalentSecurityCategoryTagSet type contains information for mapping a securityCategoryTagSet to a equivalent securityCategoryTagSet in a different policy which contains the same tagCategory values.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>policyRef - the policy of the equivalent security label. The policyRef must be declared in the equivalentPolicies.</li>
+            <li>name - the name of the equivalent securityCategoryTagSet in a different policy</li>
+            <li>id - the id of the equivalent securityCategoryTagSet in a different policy</li>
+            <li>requiredCategory - aditional tagCategories that are required in addition to the mapped values</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="requiredCategory" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <xs:attribute name="policyRef" type="policyName" use="required" />
+    <xs:attribute name="name" type="tagSetName" />
+    <xs:attribute name="id" type="oid" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="equivalentSecurityCategoryTagSet" type="equivalentSecurityCategoryTagSet">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a equivalentSecurityCategoryTag type which is referenced by the securityCategoryTagSet type.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- End of v2.0 addition -->
+  <!-- Security Category Tag Sets -->
+  <xs:complexType name="securityCategoryTagSets">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The securityCategoryTagSets type contains the list of securityCategoryTagSet defined with the security policy.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>securityCategoryTagSet - the tag sets</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:element ref="securityCategoryTagSet" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="securityCategoryTagSets" type="securityCategoryTagSets">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a securityCategoryTagSets type which is referenced by the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Object ID Data -->
+  <xs:complexType name="objectIdData">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The objectIdData type contains information about the security policy identifier and how it should be rendered in a marking.</p>
+          <p>It consists of:</p>
+          <li>markingData - the marking information for the security policy identifier</li>
+          <li>markingQualifier - qualifies the markingData associated with security policy identifier (e.g. it specifies a suffix or a prefix).</li>
+          <li>name - a unique name for the security policy identifier</li>
+          <li>id - a unique id (object identifier) for the security policy identifier</li>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <!-- v2.0: associate markingData and markingQualifiers with a policy -->
+    <xs:sequence>
+      <xs:element ref="markingData" minOccurs="0" maxOccurs="unbounded" />
+      <xs:element ref="markingQualifier" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+    <!-- End of v2.0 addition -->
+    <xs:attribute name="name" type="policyName" use="required" />
+    <xs:attribute name="id" type="oid" use="required" />
+    <xs:anyAttribute />
+  </xs:complexType>
+  <xs:element name="defaultSecurityPolicyId" type="objectIdData">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a objectIdData type which is referenced by the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <xs:element name="securityPolicyId" type="objectIdData">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of a objectIdData type which is referenced by the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Extensions -->
+  <xs:complexType name="extensions">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An element where vendor or community of interest extensions can be placed to augment the processing of the SPIF.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:sequence>
+      <xs:any processContents="lax" minOccurs="0" maxOccurs="unbounded" />
+    </xs:sequence>
+  </xs:complexType>
+  <xs:element name="extensions" type="extensions">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>An instance of an extensions type which is referenced by the SPIF element.</p>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+  </xs:element>
+  <!-- Security Policy Information File -->
+  <xs:element name="SPIF">
+    <xs:annotation>
+      <xs:documentation>
+        <div class="bodytext">
+          <p>The complete Security Policy Information.</p>
+          <p>It consists of:</p>
+          <ul>
+            <li>defaultSecurityPolicyId - identifies the security policy which will apply if data is received without a security label</li>
+            <li>securityPolicyId - identifies the security policy to which the SPIF applies</li>
+            <li>updateInfo - not currently used</li>
+            <li>securityClassifications - the set of security classifications defined within the policy, together with their equivalency mappings</li>
+            <li>securityCategoryTagSets - the set of security category tags defined within the policy, together with their equivalency mappings</li>
+            <li>privacyMarks - the set of privacy marks defined within the policy, together with their equivalency mappings</li>
+            <li>equivalentPolicies - consolidated list of all equivalent policies used within the SPIF</li>
+            <li>markingData - the marking information for the security policy</li>
+            <li>markingQualifer - qualifies the markingData associated with a security policy</li>
+            <li>extensions - provides a mechanism to include additional capabilities as future requirements are identified.</li>
+            <li>schemaVersion - the version of the schema being used</li>
+            <li>version - the version of the SPIF. Changes to the SPIF will generally update the version.</li>
+            <li>creationDate - the date the SPIF was created/updated</li>
+            <li>originatorDN - the distinguished name (DN) of creator of the SPIF, using an LDAP encoding as defined in RFC 4514.</li>
+            <li>keyIdentifier identifies the key used to sign the SPIF.</li>
+            <li>privilegeId - identifies the syntax that is included in the clearance attribute security category of relying certificates</li>
+            <li>rbacId - identifies the syntax of the security category that is used in conjunction with the SPIF</li>
+            <li>userRefURI - a reference to a document that provides further information on the use of the values defined within the SPIF. </li>
+            <li>docRefURI - a reference to a document that provides information on the values defined within the SPIF.</li>
+            <li>validity - the validaty of the SPIF (e.g. it may only be used for a specific exercise)</li>
+          </ul>
+          <p> The SPIF also include some constraints to ensure the uniqueness and referential integrity of the elements within the SPIF. These include:</p>
+          <ul>
+            <li>uqPolicyId - ensures that all PolicyId idf attributes referenced within the SPIF are unique</li>
+            <li>refPolicy2 - ensures that all equivalentSecCategoryTag policyRef attributes reference a declared PolicyId within the SPIF</li>
+            <li>refPolicy1 - ensures that all equivalentClassification policyRef attributes reference a declared PolicyId within the SPIF</li>
+            <li>uqClass - ensures that all securityClassification lacv (label and certificate value) attributes are unique</li>
+            <li>uqClassColor - ensure that all securityClassification color attributes are unique</li>
+            <li>refClass1 - ensure that all tagCategory requiredClass attributes reference a declared securityClassification within the SPIF</li>
+            <li>refClass2 - ensure that all excludedClass elements reference a declared securityClassification within the SPIF</li>
+            <li>uqSecurityCategoryTagSetId - ensure that all securityCategoryTagSets have a unique id</li>
+            <li>refTagSet1/3 - ensure that all requiredCategory tagSetRef attributes reference a declared securityCategorySet within the SPIF</li>
+            <li>refTagSet2 - ensure that all excludedCategory tagSetRef attributes reference a declared securityCategorySet within the SPIF</li>
+          </ul>
+        </div>
+      </xs:documentation>
+    </xs:annotation>
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="defaultSecurityPolicyId" minOccurs="0" />
+        <xs:element ref="securityPolicyId" />
+        <xs:element ref="updateInfo" minOccurs="0" />
+        <xs:element ref="securityClassifications" />
+        <xs:element ref="securityCategoryTagSets" minOccurs="0" />
+        <xs:element ref="privacyMarks" minOccurs="0" />
+        <xs:element ref="equivalentPolicies" minOccurs="0" />
+        <!-- v2.0: markingData and markingQualifier with a SPIF -->
+        <xs:element ref="markingData" minOccurs="0" maxOccurs="unbounded" />
+        <xs:element ref="markingQualifier" minOccurs="0" maxOccurs="unbounded" />
+        <!-- End of v2.0 addition -->
+        <xs:element ref="extensions" minOccurs="0" />
+      </xs:sequence>
+      <xs:attribute name="schemaVersion" type="version" use="required" />
+      <xs:attribute name="version" type="xs:integer" default="1" />
+      <xs:attribute name="creationDate" type="genTime" use="required" />
+      <xs:attribute name="originatorDN" type="xs:string" use="required" />
+      <xs:attribute name="keyIdentifier" type="xs:string" use="required" />
+      <xs:attribute name="privilegeId" type="oid" use="required" />
+      <xs:attribute name="rbacId" type="oid" use="required" />
+      <xs:attribute name="userRefURI" type="xs:anyURI" />
+      <xs:attribute name="docRefURI" type="xs:anyURI" />
+      <!-- v2.0: validity of SPIF -->
+      <xs:attributeGroup ref="validity" />
+      <!-- End of v2.0 addition -->
+      <xs:anyAttribute />
+    </xs:complexType>
+    <!-- Constraints -->
+    <xs:unique name="uqPolicyId">
+      <xs:selector xpath="spif:equivalentPolicies/spif:equivalentPolicy | spif:defaultSecurityPolicyId" />
+      <xs:field xpath="@id" />
+    </xs:unique>
+    <xs:key name="stPolicy">
+      <xs:selector xpath="spif:equivalentPolicies/spif:equivalentPolicy | spif:defaultSecurityPolicyId" />
+      <xs:field xpath="@name" />
+    </xs:key>
+    <xs:keyref name="refPolicy1" refer="stPolicy">
+      <xs:selector xpath="spif:securityClassifications/spif:securityClassification/spif:equivalentClassification" />
+      <xs:field xpath="@policyRef" />
+    </xs:keyref>
+    <xs:keyref name="refPolicy2" refer="stPolicy">
+      <xs:selector xpath="spif:securityCategoryTagSets/spif:securityCategoryTagSet/spif:securityCategoryTag/spif:tagCategory/spif:equivalentSecCategoryTag" />
+      <xs:field xpath="@policyRef" />
+    </xs:keyref>
+    <xs:key name="stClass">
+      <xs:selector xpath="spif:securityClassifications/spif:securityClassification" />
+      <xs:field xpath="@name" />
+    </xs:key>
+    <xs:unique name="uqClass">
+      <xs:selector xpath="spif:securityClassifications/spif:securityClassification" />
+      <xs:field xpath="@lacv" />
+    </xs:unique>
+    <xs:unique name="uqClassColor">
+      <xs:selector xpath="spif:securityClassifications/spif:securityClassification" />
+      <xs:field xpath="@color" />
+    </xs:unique>
+    <!-- v2.1: Uniqueness of securityTagSet ids -->
+    <xs:unique name="uqSecurityCategoryTagSetId">
+      <xs:selector xpath="spif:securityCategoryTagSets/spif:securityCategoryTagSet" />
+      <xs:field xpath="@id" />
+    </xs:unique>
+    <!-- End of v2.1 addition -->
+    <xs:keyref name="refClass1" refer="stClass">
+      <xs:selector xpath="spif:securityCategoryTagSets/spif:securityCategoryTagSet/spif:securityCategoryTag/spif:tagCategory" />
+      <xs:field xpath="@requiredClass" />
+    </xs:keyref>
+    <xs:keyref name="refClass2" refer="stClass">
+      <xs:selector xpath="spif:securityCategoryTagSets/spif:securityCategoryTagSet/spif:securityCategoryTag/spif:tagCategory/spif:excludedClass" />
+      <xs:field xpath="." />
+    </xs:keyref>
+    <xs:key name="stTagSet">
+      <xs:selector xpath="spif:securityCategoryTagSets/spif:securityCategoryTagSet" />
+      <xs:field xpath="@name" />
+    </xs:key>
+    <xs:keyref name="refTagSet1" refer="stTagSet">
+      <xs:selector xpath="spif:securityCategoryTagSets/spif:securityCategoryTagSet/spif:securityCategoryTag/tagCategory/spif:requiredCategory/spif:categoryGroup" />
+      <xs:field xpath="@tagSetRef" />
+    </xs:keyref>
+    <xs:keyref name="refTagSet2" refer="stTagSet">
+      <xs:selector xpath="spif:securityCategoryTagSets/spif:securityCategoryTagSet/spif:securityCategoryTag/spif:tagCategory/spif:excludedCategory" />
+      <xs:field xpath="@tagSetRef" />
+    </xs:keyref>
+    <xs:keyref name="refTagSet3" refer="stTagSet">
+      <xs:selector xpath="spif:securityClassifications/spif:securityClassification/spif:requiredCategory/spif:categoryGroup" />
+      <xs:field xpath="@tagSetRef" />
+    </xs:keyref>
+  </xs:element>
+</xs:schema>

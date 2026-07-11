@@ -4,9 +4,17 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SpifVersionInfo {
+    pub spif_version: Option<String>,
+    pub issuing_authority: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SpifPolicy {
     pub policy_id: String,
     pub policy_oid: Option<String>,
+    pub version_info: Option<SpifVersionInfo>,
     pub allowed_classifications: Vec<String>,
     pub categories: Vec<SpifCategory>,
     pub validations: Vec<SpifValidation>,
@@ -42,6 +50,7 @@ impl SpifPolicy {
         Self {
             policy_id: "ACME".into(),
             policy_oid: None,
+            version_info: None,
             allowed_classifications: vec![
                 "PUBLIC".into(),
                 "INTERNAL".into(),
@@ -77,6 +86,7 @@ impl SpifPolicy {
             policy_oid: Some(
                 "urn:oid:2.16.840.1.101.2.3.6.1.31778.102.25".into(),
             ),
+            version_info: None,
             allowed_classifications: vec![
                 "UNCLASSIFIED".into(),
                 "NATO UNCLASSIFIED".into(),
@@ -108,6 +118,7 @@ impl SpifPolicy {
         Self {
             policy_id: "US".into(),
             policy_oid: Some("2.16.840.1.101.2.3.48.2.1".into()),
+            version_info: None,
             allowed_classifications: vec![
                 "UNCLASSIFIED".into(),
                 "CONFIDENTIAL".into(),
@@ -142,6 +153,7 @@ impl SpifPolicy {
         Self {
             policy_id: "DEMO-UK".into(),
             policy_oid: Some("1.2.826.0.1.6726289.0.2".into()),
+            version_info: None,
             allowed_classifications: vec![
                 "OFFICIAL".into(),
                 "OFFICIAL-SENSITIVE".into(),

@@ -152,10 +152,27 @@ impl ComplianceChecker {
     }
 
     fn dimension_metadata(&self, registry: &ModelRegistry) -> DimensionResult {
-        let has_metadata_taxonomy = registry.taxonomy_node("Metadata").is_some();
-        let score = if self.requirements.require_metadata_support && has_metadata_taxonomy {
+        let metadata_subtypes = [
+            "Reporter",
+            "Observer",
+            "OperationalAppraisal",
+            "ValidityPeriod",
+            "SecurityClassification",
+        ];
+        let has_root = registry.taxonomy_node("Metadata").is_some();
+        let loaded = metadata_subtypes
+            .iter()
+            .filter(|name| registry.taxonomy_node(name).is_some())
+            .count();
+        let attribute_count = metadata_subtypes
+            .iter()
+            .filter(|name| registry.element_by_name(name).is_some())
+            .count();
+        let score = if has_root && loaded == metadata_subtypes.len() && attribute_count >= 3 {
             1.0
-        } else if self.requirements.require_metadata_support {
+        } else if has_root && loaded > 0 {
+            loaded as f64 / metadata_subtypes.len() as f64
+        } else if has_root {
             0.5
         } else {
             0.0
@@ -164,10 +181,18 @@ impl ComplianceChecker {
             dimension: ComplianceDimension::Metadata,
             status: status_from_score(score),
             score,
-            message: if has_metadata_taxonomy {
-                "metadata taxonomy and aggregate types available".into()
+            message: if score >= 1.0 {
+                format!(
+                    "metadata taxonomy complete ({loaded}/{} subtypes, {attribute_count} elements)",
+                    metadata_subtypes.len()
+                )
+            } else if has_root {
+                format!(
+                    "metadata partial ({loaded}/{} subtypes loaded)",
+                    metadata_subtypes.len()
+                )
             } else {
-                "metadata types implemented; taxonomy node not yet loaded".into()
+                "metadata taxonomy root not loaded".into()
             },
         }
     }

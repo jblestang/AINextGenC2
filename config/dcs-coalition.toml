@@ -1,0 +1,32 @@
+# Coalition DCS guard configuration — domains, cross-domain rules, SPIF sources.
+# Load with: DcsConfig::load_path("config/dcs-coalition.toml")
+
+[[domains]]
+id = "DOMAIN-HIGH"
+name = "High Side"
+maxClassification = "SECRET"
+releasableTo = ["USA", "GBR", "DEU"]
+acceptedNationalities = ["USA", "GBR", "DEU"]
+
+[[domains]]
+id = "DOMAIN-LOW"
+name = "Low Side"
+maxClassification = "RESTRICTED"
+releasableTo = ["USA", "GBR"]
+acceptedNationalities = ["USA", "GBR"]
+
+[[crossDomain]]
+id = "high-to-low"
+source = "DOMAIN-HIGH"
+target = "DOMAIN-LOW"
+description = "High-side to low-side cross-domain release with category-aware downgrade"
+
+[spif]
+paths = [
+  "crates/mim-spif/fixtures/nato-4774-policy.xml",
+]
+validateXsd = true
+
+[downgrade]
+intersectReleasability = true
+stripNonTargetCategories = true

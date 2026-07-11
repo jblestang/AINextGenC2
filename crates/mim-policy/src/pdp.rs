@@ -164,11 +164,14 @@ impl PolicyDecisionPoint {
 
         if context.label.classification > target.max_classification {
             if target.max_classification >= ClassificationLevel::Unclassified {
-                let mut downgraded = context.label.clone();
-                downgraded.classification = target.max_classification;
+                let downgraded = crate::downgrade::downgraded_label_for_target(
+                    &context.label,
+                    target,
+                    self.store.downgrade_config(),
+                )?;
                 return Ok(PolicyDecision::downgrade(
                     format!(
-                        "classification {} exceeds target domain max {}; downgrading to {}",
+                        "classification {} exceeds target domain max {}; downgrading to {} with category intersection",
                         context.label.classification.as_stanag_str(),
                         target.max_classification.as_stanag_str(),
                         downgraded.classification.as_stanag_str()

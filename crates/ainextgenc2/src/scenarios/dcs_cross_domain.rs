@@ -3,7 +3,8 @@
 use mim_audit::AuditLog;
 use mim_crypto::conformance_keypair;
 use mim_dcs::{
-    CrossDomainGuard, CrossDomainTransfer, GuardDecision, LabeledMimExchange, TransferOutcome,
+    bundled_config_path, CrossDomainGuard, CrossDomainTransfer, DcsConfig, GuardDecision,
+    LabeledMimExchange, TransferOutcome,
 };
 use mim_labeling::{
     CategoryMarking, ClassificationLevel, ConfidentialityLabel, LabelPolicy,
@@ -38,8 +39,11 @@ pub struct DcsCrossDomainScenario {
 
 impl Default for DcsCrossDomainScenario {
     fn default() -> Self {
+        let config = DcsConfig::load_path(bundled_config_path("dcs-coalition.toml"))
+            .unwrap_or_else(|_| DcsConfig::conformance_high_to_low());
         Self {
-            guard: CrossDomainGuard::preset_high_to_low(),
+            guard: CrossDomainGuard::from_config(&config)
+                .unwrap_or_else(|_| CrossDomainGuard::preset_high_to_low()),
             label: ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret)
                 .with_category(CategoryMarking::releasable_to(vec![
                     "USA".into(),

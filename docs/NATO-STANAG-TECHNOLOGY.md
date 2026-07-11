@@ -227,19 +227,23 @@ let pep = PolicyEnforcementPoint::from_preset_high_to_low()
 ## MIM import (`mim-import`)
 
 ```bash
-# Authoritative mimworld JC3IEDM
+# Authoritative mimworld JC3IEDM (falls back to DISO mirror, then bundled OWL)
 cargo run -p mim-import -- --source mimworld \
+  --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
+
+# Offline bundled JC3IEDM (reproducible)
+cargo run -p mim-import -- --source bundled:jc3iedm \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 
 # Local OWL file
 cargo run -p mim-import -- --owl /path/to/JC3IEDM.owl --output models/mim-full-5.1.json
 ```
 
-HTTP fetch uses `ureq` with TLS. Set `authoritative_mimworld` to skip synthetic OWL padding.
+HTTP fetch uses `ureq` with TLS. Bundled ontology: `models/ontology/JC3IEDM.owl`. Set `authoritative_mimworld` to skip synthetic OWL padding.
 
 ## Language and quality constraints
 
-- **Rust edition 2021**, MSRV 1.75 (workspace); `fips-validated` may require newer toolchain
+- **Rust edition 2021**, MSRV **1.85** (`rust-toolchain.toml`); required for `mim-crypto --features fips`
 - **Zero-panic policy:** `#![deny(clippy::unwrap_used, ...)]`, `#![forbid(unsafe_code)]`
 - **Serialization:** `serde` + `serde_json` throughout wire formats
 - **XML:** `quick-xml` for STANAG 4774 XML and SPIF

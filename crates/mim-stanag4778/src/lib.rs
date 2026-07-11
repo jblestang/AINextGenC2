@@ -19,11 +19,15 @@
 pub mod assertion;
 pub mod binding;
 pub mod bdo;
+pub mod detached;
 pub mod rest_envelope;
 pub mod smtp_header;
 
 pub use assertion::{AssertionBinding, BindingSignature};
 pub use binding::{BindingMethod, BindingProfile, MetadataBinding};
 pub use bdo::BindingDataObject;
+pub use detached::{
+    verify_detached_label, DetachedLabelResolver, FileDetachedLabelResolver,
+};
 pub use rest_envelope::RestEnvelope;
 pub use smtp_header::SmtpHeaderBinding;

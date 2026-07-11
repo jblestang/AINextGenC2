@@ -37,6 +37,20 @@ pub fn serialize(label: &ConfidentialityLabel) -> LabelResult<String> {
 
     write_confidentiality_information(&mut writer, label)?;
 
+    for alt in &label.alternative_labels {
+        writer
+            .write_event(Event::Start(BytesStart::new(
+                "alternativeConfidentialityLabel",
+            )))
+            .map_err(|e| LabelError::Serialization(e.to_string()))?;
+        write_confidentiality_information(&mut writer, alt)?;
+        writer
+            .write_event(Event::End(BytesEnd::new(
+                "alternativeConfidentialityLabel",
+            )))
+            .map_err(|e| LabelError::Serialization(e.to_string()))?;
+    }
+
     writer
         .write_event(Event::End(BytesEnd::new("ConfidentialityLabel")))
         .map_err(|e| LabelError::Serialization(e.to_string()))?;
@@ -80,6 +94,14 @@ fn write_confidentiality_information(
         write_text_element(writer, "PrivacyMark", privacy)?;
     }
 
+    if let Some(colour) = &label.colour {
+        write_text_element(writer, "Colour", colour)?;
+    }
+
+    if let Some(marking) = &label.marking_data {
+        write_text_element(writer, "MarkingData", marking)?;
+    }
+
     for category in &label.categories {
         let mut cat = BytesStart::new("Category");
         cat.push_attribute(("TagName", category.tag_name.as_str()));
@@ -99,7 +121,8 @@ fn write_confidentiality_information(
 
     writer
         .write_event(Event::End(BytesEnd::new("ConfidentialityInformation")))
-        .map_err(|e| LabelError::Serialization(e.to_string()))
+        .map_err(|e| LabelError::Serialization(e.to_string()))?;
+    Ok(())
 }
 
 fn category_type_to_str(category_type: CategoryType) -> &'static str {
@@ -145,7 +168,10 @@ pub fn deserialize(data: &str) -> LabelResult<ConfidentialityLabel> {
     let mut policy_oid = None;
     let mut classification = String::new();
     let mut privacy_mark = None;
+    let mut colour = None;
+    let mut marking_data = None;
     let mut categories = Vec::new();
+    let mut alternative_labels = Vec::new();
     let mut creation_time = None;
     let mut review_date_time = None;
 
@@ -153,6 +179,14 @@ pub fn deserialize(data: &str) -> LabelResult<ConfidentialityLabel> {
     let mut current_category_type = CategoryType::Permissive;
     let mut current_category_values = Vec::new();
     let mut in_category = false;
+    let mut in_alternative = false;
+    let mut alt_policy = String::new();
+    let mut alt_policy_oid: Option<String> = None;
+    let mut alt_classification = String::new();
+    let mut alt_privacy = None;
+    let mut alt_colour = None;
+    let mut alt_marking = None;
+    let mut alt_categories = Vec::new();
     let mut current_element = String::new();
 
     loop {
@@ -161,6 +195,16 @@ pub fn deserialize(data: &str) -> LabelResult<ConfidentialityLabel> {
             Ok(Event::Start(e)) => {
                 let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
                 if LABEL_WRAPPERS.contains(&name.as_str()) {
+                    if name == "alternativeConfidentialityLabel" {
+                        in_alternative = true;
+                        alt_policy.clear();
+                        alt_policy_oid = None;
+                        alt_classification.clear();
+                        alt_privacy = None;
+                        alt_colour = None;
+                        alt_marking = None;
+                        alt_categories.clear();
+                    }
                     for attr in e.attributes().flatten() {
                         let key = String::from_utf8_lossy(attr.key.as_ref());
                         let val = String::from_utf8_lossy(&attr.value);
@@ -201,8 +245,34 @@ pub fn deserialize(data: &str) -> LabelResult<ConfidentialityLabel> {
                 let text = e.unescape().map_err(|err| LabelError::Parse(err.to_string()))?;
                 match current_element.as_str() {
                     "PolicyIdentifier" => policy = text.into_owned(),
-                    "Classification" => classification = text.into_owned(),
-                    "PrivacyMark" => privacy_mark = Some(text.into_owned()),
+                    "Classification" => {
+                        if in_alternative {
+                            alt_classification = text.into_owned();
+                        } else {
+                            classification = text.into_owned();
+                        }
+                    }
+                    "PrivacyMark" => {
+                        if in_alternative {
+                            alt_privacy = Some(text.into_owned());
+                        } else {
+                            privacy_mark = Some(text.into_owned());
+                        }
+                    }
+                    "Colour" => {
+                        if in_alternative {
+                            alt_colour = Some(text.into_owned());
+                        } else {
+                            colour = Some(text.into_owned());
+                        }
+                    }
+                    "MarkingData" => {
+                        if in_alternative {
+                            alt_marking = Some(text.into_owned());
+                        } else {
+                            marking_data = Some(text.into_owned());
+                        }
+                    }
                     "GenericValues" | "GenericValue" if in_category => {
                         current_category_values.push(text.into_owned());
                     }
@@ -222,6 +292,34 @@ pub fn deserialize(data: &str) -> LabelResult<ConfidentialityLabel> {
                         values: current_category_values.clone(),
                     });
                     in_category = false;
+                } else if name == "Category" && in_alternative {
+                    alt_categories.push(CategoryMarking {
+                        tag_name: current_category_tag.clone(),
+                        category_type: current_category_type,
+                        values: current_category_values.clone(),
+                    });
+                    in_category = false;
+                } else if name == "alternativeConfidentialityLabel" && in_alternative {
+                    if !alt_classification.is_empty() {
+                        let mut alt_policy_obj = LabelPolicy::new(if alt_policy.is_empty() {
+                            "NATO".into()
+                        } else {
+                            alt_policy.clone()
+                        });
+                        if let Some(oid) = alt_policy_oid.clone() {
+                            alt_policy_obj = alt_policy_obj.with_oid(oid);
+                        }
+                        let mut alt_label = ConfidentialityLabel::new(
+                            alt_policy_obj,
+                            ClassificationLevel::parse(&alt_classification)?,
+                        );
+                        alt_label.privacy_mark = alt_privacy.clone();
+                        alt_label.colour = alt_colour.clone();
+                        alt_label.marking_data = alt_marking.clone();
+                        alt_label.categories = alt_categories.clone();
+                        alternative_labels.push(alt_label);
+                    }
+                    in_alternative = false;
                 }
                 current_element.clear();
             }
@@ -248,7 +346,10 @@ pub fn deserialize(data: &str) -> LabelResult<ConfidentialityLabel> {
     let mut label =
         ConfidentialityLabel::new(label_policy, ClassificationLevel::parse(&classification)?);
     label.privacy_mark = privacy_mark;
+    label.colour = colour;
+    label.marking_data = marking_data;
     label.categories = categories;
+    label.alternative_labels = alternative_labels;
     label.creation_time = creation_time;
     label.review_date_time = review_date_time;
     Ok(label)
