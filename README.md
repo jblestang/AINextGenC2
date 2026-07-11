@@ -126,6 +126,7 @@ To reach 100% MIM compliance, load `models/mim-full-5.1.json` (bundled; regenera
 | DCS cross-domain | `cargo run --example dcs_cross_domain` | Label + NMBS + ZTDF + guard downgrade |
 | MIP4-IES exchange | `cargo run --example mip4_ies_exchange` | PEP-gated broker CRUD |
 | Allied sensor retrieval | `AlliedSensorRetrievalScenario::demo()` | Coalition sync; national-only tracks hidden |
+| SITAC simulator | `cargo run --example sitac_simulator` | 4 radars + FCS/4 TELs; national C2; long-range coalition share |
 | Transport exchange | `TransportExchangeScenario::demo()` | Secured publish + filter |
 
 ### Air defense radar example
