@@ -12,7 +12,8 @@ use crate::envelope::unwrap_put_object;
 use crate::error::{TransportError, TransportResult};
 use crate::message::{
     DeleteObjectRequest, DeleteObjectResponse, GetByFilterRequest, GetByFilterResponse,
-    GetByOidRequest, GetByOidResponse, PutObjectRequest, PutObjectResponse, SyncResponse,
+    GetByOidRequest, GetByOidResponse, IesOperation, PutObjectRequest, PutObjectResponse,
+    SyncResponse,
 };
 
 /// MIP4-IES exchange broker with PEP-gated access control.
@@ -183,7 +184,26 @@ impl SecuredExchangeBroker {
     }
 
     pub fn sync_since(&self, since: u64) -> SyncResponse {
-        self.inner.sync_since(since)
+        let raw = self.inner.sync_since(since);
+        let mut entries = Vec::new();
+        for entry in raw.entries {
+            if entry.operation == IesOperation::DeleteObject {
+                entries.push(entry);
+                continue;
+            }
+            if self
+                .get_by_oid(GetByOidRequest {
+                    oid: entry.oid.clone(),
+                })
+                .is_ok()
+            {
+                entries.push(entry);
+            }
+        }
+        SyncResponse {
+            latest_sequence: raw.latest_sequence,
+            entries,
+        }
     }
 
     pub fn latest_sequence(&self) -> u64 {

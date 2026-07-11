@@ -17,8 +17,9 @@ use mim_transport::message::PutObjectResponse;
 use mim_transport::rest::{parse_delete, parse_get_by_oid};
 use mim_transport::secured::SecuredExchangeBroker;
 use mim_transport::wire::{
-    format_from_content_type, negotiate_format, wire_registry, WirePayloadFormat, HEADER_MIM_VERSION,
-    MEDIA_MIM_JSON, MEDIA_MIM_XML, MIM_VERSION,
+    format_from_content_type, negotiate_format, validate_mim_version, wire_registry,
+    WirePayloadFormat, HEADER_MIM_VERSION, MEDIA_MIM_JSON, MEDIA_MIM_JSONLD, MEDIA_MIM_XML,
+    MIM_VERSION,
 };
 use mim_transport::{
     encode_oid_for_path, filter_from_query, TransportError, TransportResult,
@@ -69,6 +70,13 @@ async fn put_object(
     headers: HeaderMap,
     body: String,
 ) -> Response {
+    if let Err(err) = validate_mim_version(
+        headers
+            .get(HEADER_MIM_VERSION)
+            .and_then(|value| value.to_str().ok()),
+    ) {
+        return map_error(TransportError::InvalidRequest(err));
+    }
     let envelope = match serde_json::from_str::<RestEnvelope>(&body) {
         Ok(envelope) => envelope,
         Err(err) => return map_error(TransportError::Serialization(err.to_string())),
@@ -89,6 +97,13 @@ async fn get_by_oid(
     headers: HeaderMap,
     Path(encoded_oid): Path<String>,
 ) -> Response {
+    if let Err(err) = validate_mim_version(
+        headers
+            .get(HEADER_MIM_VERSION)
+            .and_then(|value| value.to_str().ok()),
+    ) {
+        return map_error(TransportError::InvalidRequest(err));
+    }
     let format = negotiated_format(&headers);
     let oid = percent_decode_path_segment(&encoded_oid);
     let path = format!("/mip4-ies/v1/objects/{oid}");
@@ -97,7 +112,7 @@ async fn get_by_oid(
             let broker = state.broker.lock().await;
             match broker.get_by_oid(request) {
                 Ok(response) => {
-                    if format == WirePayloadFormat::Xml {
+                    if format == WirePayloadFormat::Xml || format == WirePayloadFormat::JsonLd {
                         match serialize_instance(&response.instance, format) {
                             Ok(body) => mim_payload_response(format, body),
                             Err(err) => map_error(err),
@@ -134,7 +149,7 @@ async fn get_by_filter(
     let broker = state.broker.lock().await;
     match broker.get_by_filter(request) {
         Ok(response) => {
-            if format == WirePayloadFormat::Xml {
+            if format == WirePayloadFormat::Xml || format == WirePayloadFormat::JsonLd {
                 match serialize_instances(&response.instances, format) {
                     Ok(body) => mim_payload_response(format, body),
                     Err(err) => map_error(err),
@@ -237,9 +252,9 @@ fn negotiated_response<T: serde::Serialize>(
     value: &T,
 ) -> Response {
     match format {
-        WirePayloadFormat::Json => {
+        WirePayloadFormat::Json | WirePayloadFormat::JsonLd => {
             let mut response = (status, Json(value)).into_response();
-            apply_mim_headers(response.headers_mut(), MEDIA_MIM_JSON);
+            apply_mim_headers(response.headers_mut(), format.content_type());
             response
         }
         WirePayloadFormat::Xml => match serde_json::to_string(value) {

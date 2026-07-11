@@ -973,6 +973,7 @@ dependencies = [
  "mim-crypto",
  "mim-labeling",
  "mim-model",
+ "mim-policy",
  "mim-runtime",
  "mim-stanag4778",
  "mim-transport",

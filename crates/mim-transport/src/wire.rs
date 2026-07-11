@@ -11,6 +11,12 @@ pub const MEDIA_MIM_JSON: &str = "application/mim+json";
 /// Official MIP4-IES XML payload media type.
 pub const MEDIA_MIM_XML: &str = "application/mim+xml";
 
+/// MIP4-IES JSON-LD payload media type.
+pub const MEDIA_MIM_JSONLD: &str = "application/ld+json";
+
+/// JSON-LD `@context` for MIM 5.1 wire profile.
+pub const MIM_JSONLD_CONTEXT: &str = "https://www.mimworld.org/mim/5.1.0/context.jsonld";
+
 /// Fallback JSON media type for REST envelope bodies.
 pub const MEDIA_JSON: &str = "application/json";
 
@@ -22,6 +28,7 @@ pub const HEADER_MIM_VERSION: &str = "MIM-Version";
 pub enum WirePayloadFormat {
     Json,
     Xml,
+    JsonLd,
 }
 
 impl WirePayloadFormat {
@@ -29,6 +36,7 @@ impl WirePayloadFormat {
         match self {
             Self::Json => MEDIA_MIM_JSON,
             Self::Xml => MEDIA_MIM_XML,
+            Self::JsonLd => MEDIA_MIM_JSONLD,
         }
     }
 
@@ -36,13 +44,17 @@ impl WirePayloadFormat {
         match self {
             Self::Json => SerializationFormat::Json,
             Self::Xml => SerializationFormat::Xml,
+            Self::JsonLd => SerializationFormat::JsonLd,
         }
     }
 }
 
 pub fn detect_payload_format(payload: &str) -> WirePayloadFormat {
-    if payload.trim_start().starts_with('<') {
+    let trimmed = payload.trim_start();
+    if trimmed.starts_with('<') {
         WirePayloadFormat::Xml
+    } else if trimmed.starts_with('{') && trimmed.contains("@context") {
+        WirePayloadFormat::JsonLd
     } else {
         WirePayloadFormat::Json
     }
@@ -52,6 +64,7 @@ pub fn format_from_content_type(content_type: &str) -> Option<WirePayloadFormat>
     let mime = content_type.split(';').next()?.trim().to_ascii_lowercase();
     match mime.as_str() {
         MEDIA_MIM_XML | "application/xml" | "text/xml" => Some(WirePayloadFormat::Xml),
+        MEDIA_MIM_JSONLD => Some(WirePayloadFormat::JsonLd),
         MEDIA_MIM_JSON | MEDIA_JSON => Some(WirePayloadFormat::Json),
         _ => None,
     }
@@ -79,6 +92,7 @@ pub fn negotiate_format(accept: Option<&str>, default: WirePayloadFormat) -> Wir
 
         let format = match mime.as_str() {
             MEDIA_MIM_XML | "application/xml" | "text/xml" => Some(WirePayloadFormat::Xml),
+            MEDIA_MIM_JSONLD => Some(WirePayloadFormat::JsonLd),
             MEDIA_MIM_JSON | MEDIA_JSON => Some(WirePayloadFormat::Json),
             "*/*" => Some(default),
             _ => None,
@@ -92,6 +106,15 @@ pub fn negotiate_format(accept: Option<&str>, default: WirePayloadFormat) -> Wir
     }
 
     best.map(|(format, _)| format).unwrap_or(default)
+}
+
+/// Validate optional or required MIM-Version request header.
+pub fn validate_mim_version(header: Option<&str>) -> Result<(), String> {
+    match header {
+        None => Ok(()),
+        Some(version) if version == MIM_VERSION => Ok(()),
+        Some(other) => Err(format!("unsupported MIM-Version '{other}', expected {MIM_VERSION}")),
+    }
 }
 
 /// Minimal registry for wire-format serialization without full model validation.

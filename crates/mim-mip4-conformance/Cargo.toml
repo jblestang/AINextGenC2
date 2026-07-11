@@ -12,6 +12,7 @@ mim-core = { workspace = true }
 mim-model = { workspace = true }
 mim-runtime = { workspace = true }
 mim-transport = { workspace = true }
+mim-policy = { workspace = true }
 mim-crypto = { workspace = true }
 mim-labeling = { workspace = true }
 mim-stanag4778 = { workspace = true }

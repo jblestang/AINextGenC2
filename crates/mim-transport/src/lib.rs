@@ -21,6 +21,7 @@ pub mod error;
 pub mod filter;
 pub mod message;
 pub mod persistence;
+pub mod replication;
 pub mod rest;
 pub mod secured;
 pub mod wire;
@@ -38,9 +39,11 @@ pub use message::{
     PutObjectRequest, PutObjectResponse, SyncResponse,
 };
 pub use persistence::FileExchangeStore;
+pub use replication::{ReplicationAgent, ReplicationApplyReport};
 pub use rest::{paths, encode_oid_for_path, filter_from_query, HttpMethod, RestRoute};
 pub use secured::SecuredExchangeBroker;
 pub use wire::{
-    detect_payload_format, format_from_content_type, negotiate_format, wire_registry,
-    WirePayloadFormat, HEADER_MIM_VERSION, MEDIA_MIM_JSON, MEDIA_MIM_XML, MIM_VERSION,
+    detect_payload_format, format_from_content_type, negotiate_format, validate_mim_version,
+    wire_registry, WirePayloadFormat, HEADER_MIM_VERSION, MEDIA_MIM_JSON, MEDIA_MIM_JSONLD,
+    MEDIA_MIM_XML, MIM_JSONLD_CONTEXT, MIM_VERSION,
 };

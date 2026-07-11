@@ -10,11 +10,13 @@ use serde_json::Value;
 
 use crate::instance::{InstanceStore, MimInstance, PropertyValue};
 
-/// Supported MIM serialization formats.
+/// JSON-LD `@context` document for MIM 5.1 wire profile.
+pub const MIM_JSONLD_CONTEXT: &str = "https://www.mimworld.org/mim/5.1.0/context.jsonld";
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SerializationFormat {
     Json,
     Xml,
+    JsonLd,
 }
 
 /// Serializer for MIM instances compatible with MIP4-IES exchange patterns.
@@ -39,6 +41,7 @@ impl Serializer {
     ) -> MimResult<String> {
         match format {
             SerializationFormat::Json => self.to_json(instance),
+            SerializationFormat::JsonLd => self.to_jsonld(instance),
             SerializationFormat::Xml => {
                 let mut writer = Writer::new(Vec::new());
                 self.write_xml_declaration(&mut writer)?;
@@ -56,6 +59,7 @@ impl Serializer {
         match format {
             SerializationFormat::Json => serde_json::from_str(data)
                 .map_err(|e| MimError::Serialization(e.to_string())),
+            SerializationFormat::JsonLd => self.from_jsonld(data),
             SerializationFormat::Xml => self.parse_xml_instances(data)?.into_iter().next().ok_or_else(
                 || MimError::Serialization("XML payload contains no MIM instance".into()),
             ),
@@ -73,6 +77,11 @@ impl Serializer {
                     .map_err(|e| MimError::Serialization(e.to_string()))?;
                 Ok(payload.instances)
             }
+            SerializationFormat::JsonLd => {
+                let payload: JsonLdExchangePayload = serde_json::from_str(data)
+                    .map_err(|e| MimError::Serialization(e.to_string()))?;
+                Ok(payload.instances)
+            }
             SerializationFormat::Xml => self.parse_xml_instances(data),
         }
     }
@@ -86,6 +95,15 @@ impl Serializer {
         match format {
             SerializationFormat::Json => {
                 let payload = ExchangePayload {
+                    model_version: self.registry.version().to_owned(),
+                    instances: instances.into_iter().cloned().collect(),
+                };
+                serde_json::to_string_pretty(&payload)
+                    .map_err(|e| MimError::Serialization(e.to_string()))
+            }
+            SerializationFormat::JsonLd => {
+                let payload = JsonLdExchangePayload {
+                    context: MIM_JSONLD_CONTEXT.to_owned(),
                     model_version: self.registry.version().to_owned(),
                     instances: instances.into_iter().cloned().collect(),
                 };
@@ -124,6 +142,27 @@ impl Serializer {
 
     fn to_json(&self, instance: &MimInstance) -> MimResult<String> {
         serde_json::to_string_pretty(instance).map_err(|e| MimError::Serialization(e.to_string()))
+    }
+
+    fn to_jsonld(&self, instance: &MimInstance) -> MimResult<String> {
+        let data = serde_json::to_value(instance).map_err(|e| MimError::Serialization(e.to_string()))?;
+        let doc = serde_json::json!({
+            "@context": MIM_JSONLD_CONTEXT,
+            "@type": format!("mim:{}", instance.class_name),
+            "@id": instance.oid.as_str(),
+            "mim:semanticId": instance.class_semantic_id.to_string(),
+            "mim:modelVersion": self.registry.version(),
+            "mim:data": data,
+        });
+        serde_json::to_string_pretty(&doc).map_err(|e| MimError::Serialization(e.to_string()))
+    }
+
+    fn from_jsonld(&self, data: &str) -> MimResult<MimInstance> {
+        let value: Value = serde_json::from_str(data).map_err(|e| MimError::Serialization(e.to_string()))?;
+        if let Some(inner) = value.get("mim:data") {
+            return serde_json::from_value(inner.clone()).map_err(|e| MimError::Serialization(e.to_string()));
+        }
+        serde_json::from_value(value).map_err(|e| MimError::Serialization(e.to_string()))
     }
 
     fn parse_xml_instances(&self, data: &str) -> MimResult<Vec<MimInstance>> {
@@ -333,6 +372,14 @@ impl Serializer {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExchangePayload {
+    model_version: String,
+    instances: Vec<MimInstance>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct JsonLdExchangePayload {
+    #[serde(rename = "@context")]
+    context: String,
     model_version: String,
     instances: Vec<MimInstance>,
 }

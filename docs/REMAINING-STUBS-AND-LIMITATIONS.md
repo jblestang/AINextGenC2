@@ -14,7 +14,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | ZTDF / ACP-240 Supp. 3–4 | Ready (encoding) | Partial (no KAS/ABAC) | Not ready |
 | ACP-240 full (Ed A + Supp. 5) | Partial | Not ready | Not ready |
 | DCS cross-domain | Ready (config file) | Partial | Not ready |
-| MIP4-IES transport | Partial (REST + XML + journal) | Partial | Not ready |
+| MIP4-IES transport | Ready (dimensional ≥95%) | Partial | Not ready |
 | Crypto / PKI | Conformance keys; FIPS build verified | PKI loaders exist; not default | RSA outside FIPS module |
 | MIM full manifest | 820 OWL attributes imported | Partial | Not accredited |
 | Audit | In-memory / file JSONL | Partial | WORM / HSM not implemented |

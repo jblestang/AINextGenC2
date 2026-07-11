@@ -9,6 +9,7 @@ pub enum IesOperation {
     GetByOid,
     GetByFilter,
     DeleteObject,
+    Sync,
 }
 
 /// PutObject — publish or update a MIM instance.

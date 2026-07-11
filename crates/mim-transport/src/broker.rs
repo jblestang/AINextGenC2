@@ -20,6 +20,7 @@ pub struct ExchangeBroker {
     inactive: HashSet<ObjectIdentifier>,
     journal: Vec<JournalEntry>,
     sequence: u64,
+    applied_sequence: u64,
 }
 
 impl ExchangeBroker {
@@ -30,6 +31,7 @@ impl ExchangeBroker {
             inactive: HashSet::new(),
             journal: Vec::new(),
             sequence: 0,
+            applied_sequence: 0,
         }
     }
 
@@ -39,6 +41,7 @@ impl ExchangeBroker {
         inactive: Vec<ObjectIdentifier>,
         journal: Vec<JournalEntry>,
         sequence: u64,
+        applied_sequence: u64,
     ) -> Self {
         let store = instances
             .into_iter()
@@ -50,7 +53,52 @@ impl ExchangeBroker {
             inactive: inactive.into_iter().collect(),
             journal,
             sequence,
+            applied_sequence,
         }
+    }
+
+    pub fn last_applied_sequence(&self) -> u64 {
+        self.applied_sequence
+    }
+
+    pub fn store_get(&self, oid: &ObjectIdentifier) -> Option<&MimInstance> {
+        self.store.get(oid)
+    }
+
+    pub fn store_contains(&self, oid: &ObjectIdentifier) -> bool {
+        self.store.contains_key(oid)
+    }
+
+    pub fn apply_entry_from(
+        &mut self,
+        publisher: &ExchangeBroker,
+        entry: &JournalEntry,
+    ) -> TransportResult<()> {
+        match entry.operation {
+            IesOperation::PutObject => {
+                let instance = publisher
+                    .store_get(&entry.oid)
+                    .cloned()
+                    .ok_or_else(|| TransportError::NotFound(entry.oid.to_string()))?;
+                self.put_object(PutObjectRequest { instance })?;
+            }
+            IesOperation::DeleteObject => {
+                if publisher.store_contains(&entry.oid) {
+                    let _ = self.delete_object(DeleteObjectRequest {
+                        oid: entry.oid.clone(),
+                    });
+                }
+            }
+            IesOperation::GetByOid | IesOperation::GetByFilter | IesOperation::Sync => {
+                return Err(TransportError::Unsupported(format!(
+                    "journal operation {:?} is not replicable",
+                    entry.operation
+                )));
+            }
+        }
+
+        self.applied_sequence = entry.sequence;
+        Ok(())
     }
 
     pub fn instances(&self) -> impl Iterator<Item = &MimInstance> {
@@ -103,6 +151,9 @@ impl ExchangeBroker {
 
     /// PutObject — publish or update a MIM instance.
     pub fn put_object(&mut self, request: PutObjectRequest) -> TransportResult<PutObjectResponse> {
+        mim_runtime::validate_serialized_instance(&request.instance)
+            .map_err(|e| TransportError::Validation(e))?;
+
         let validator = Validator::new(&self.registry);
         let report = validator.validate_instance(&request.instance);
         if !report.is_valid() {

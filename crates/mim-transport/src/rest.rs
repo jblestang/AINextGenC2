@@ -11,6 +11,7 @@ pub mod paths {
     pub const API_VERSION: &str = "v1";
     pub const BASE: &str = "/mip4-ies/v1";
     pub const OBJECTS: &str = "/mip4-ies/v1/objects";
+    pub const SYNC: &str = "/mip4-ies/v1/sync";
 }
 
 /// HTTP methods mapped to MIP4-IES operations.
@@ -59,6 +60,11 @@ pub fn parse_route(method: HttpMethod, path: &str) -> TransportResult<RestRoute>
                 operation: IesOperation::DeleteObject,
             })
         }
+        HttpMethod::Get if normalized == paths::SYNC => Ok(RestRoute {
+            method,
+            path: normalized,
+            operation: IesOperation::Sync,
+        }),
         _ => Err(TransportError::Unsupported(format!(
             "no MIP4-IES route for {method:?} {path}"
         ))),

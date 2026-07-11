@@ -19,6 +19,8 @@ struct ExchangeSnapshot {
     inactive: Vec<ObjectIdentifier>,
     journal: Vec<JournalEntry>,
     sequence: u64,
+    #[serde(default)]
+    applied_sequence: u64,
 }
 
 /// File-backed persistence for MIP4-IES exchange state.
@@ -60,6 +62,11 @@ impl FileExchangeStore {
             snapshot.inactive,
             snapshot.journal,
             snapshot.sequence,
+            if snapshot.applied_sequence == 0 {
+                snapshot.sequence
+            } else {
+                snapshot.applied_sequence
+            },
         ))
     }
 
@@ -74,6 +81,7 @@ impl FileExchangeStore {
             inactive: broker.inactive_oids().cloned().collect(),
             journal: broker.journal().to_vec(),
             sequence: broker.latest_sequence(),
+            applied_sequence: broker.last_applied_sequence(),
         };
 
         let json = serde_json::to_string_pretty(&snapshot)

@@ -12,8 +12,12 @@
     clippy::unimplemented
 )]
 
+pub mod dimension;
+#[allow(clippy::expect_used)]
+pub mod evaluate;
 pub mod report;
 pub mod runner;
 
+pub use dimension::{Mip4Dimension, Mip4DimensionResult, ACCREDITATION_THRESHOLD};
 pub use report::{Mip4ConformanceReport, Mip4SuiteResult, Mip4TestResult};
 pub use runner::Mip4ConformanceRunner;

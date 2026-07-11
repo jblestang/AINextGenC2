@@ -13,13 +13,15 @@
 )]
 
 pub mod instance;
+pub mod instance_schema;
 pub mod oid;
 pub mod serialize;
 pub mod validate;
 pub mod xsd;
 
 pub use instance::{InstanceStore, MimInstance, PropertyValue};
+pub use instance_schema::validate_serialized_instance;
 pub use oid::ObjectIdentifier;
-pub use serialize::{SerializationFormat, Serializer};
+pub use serialize::{SerializationFormat, Serializer, MIM_JSONLD_CONTEXT};
 pub use validate::{ValidationIssue, ValidationReport, Validator};
 pub use xsd::validate_exchange_xsd;

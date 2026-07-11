@@ -89,6 +89,22 @@ Use `mim_transport::encode_oid_for_path()`.
 | `mim-transport-http` | Axum router (`exchange_router`), content negotiation |
 | `mim-mip4-conformance` | Accreditation test vectors (`--mip4`) |
 
+## Dimensional accreditation scorecard
+
+`cargo run -p ainextgenc2 -- --mip4` evaluates **seven FMN dimensions**; each must score **≥95%** for accreditation readiness:
+
+| Dimension | Scope |
+|-----------|--------|
+| REST operations | CRUD, sync, pagination, REST route parsing |
+| REST binding | Media types, JSON-LD, XPath, MIM-Version, envelopes |
+| Message schemas | JSON/XML/JSON-LD roundtrip, XSD, JSON schema validation |
+| Replication | Journal, sync, `ReplicationAgent`, persistence |
+| MIM semantics | Validator, registry, PutObject validation |
+| FMN security | STANAG 4778 envelopes, PEP clearance, secured sync |
+| Accreditation | NATO-style fixtures, interop vectors, full-stack |
+
+Current automated suite: **140 checks** across all dimensions.
+
 ## Verification
 
 ```bash

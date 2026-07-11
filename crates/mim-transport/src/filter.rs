@@ -1,4 +1,5 @@
 use mim_runtime::MimInstance;
+use serde_json::Value;
 
 use crate::error::{TransportError, TransportResult};
 
@@ -21,6 +22,7 @@ pub struct FilterPredicate {
 /// - `//Target`
 /// - `//Target[nameText='HOSTILE-1']`
 /// - `//Target[@nameText="HOSTILE-1"]`
+/// - `//Target[@nameText='A'][@status='ACTIVE']` (multi-predicate)
 pub fn parse_filter(expression: &str) -> TransportResult<FilterExpression> {
     let trimmed = expression.trim();
     if !trimmed.starts_with("//") {
@@ -30,10 +32,10 @@ pub fn parse_filter(expression: &str) -> TransportResult<FilterExpression> {
     }
 
     let body = &trimmed[2..];
-    let bracket = body.find('[');
-    let (class_name, predicate_text) = match bracket {
-        Some(idx) => (&body[..idx], Some(&body[idx..])),
-        None => (body, None),
+    let first_bracket = body.find('[');
+    let class_name = match first_bracket {
+        Some(idx) => body[..idx].trim(),
+        None => body.trim(),
     };
 
     if class_name.is_empty() {
@@ -43,8 +45,23 @@ pub fn parse_filter(expression: &str) -> TransportResult<FilterExpression> {
     }
 
     let mut predicates = Vec::new();
-    if let Some(text) = predicate_text {
-        predicates.push(parse_predicate(text)?);
+    let mut cursor = match first_bracket {
+        Some(idx) => &body[idx..],
+        None => "",
+    };
+
+    while cursor.starts_with('[') {
+        let close = cursor
+            .find(']')
+            .ok_or_else(|| TransportError::InvalidRequest(format!("unclosed predicate in {expression}")))?;
+        predicates.push(parse_predicate(&cursor[..=close])?);
+        cursor = &cursor[close + 1..];
+    }
+
+    if !cursor.trim().is_empty() {
+        return Err(TransportError::InvalidRequest(format!(
+            "unexpected trailing filter text: '{cursor}'"
+        )));
     }
 
     Ok(FilterExpression {
@@ -109,9 +126,17 @@ pub fn instance_matches(instance: &MimInstance, filter: &FilterExpression) -> bo
         instance
             .property(&predicate.property_name)
             .and_then(|property| property.value.as_option())
-            .and_then(|value| value.as_str())
-            .is_some_and(|actual| actual == predicate.value)
+            .is_some_and(|value| property_value_matches(value, &predicate.value))
     })
+}
+
+fn property_value_matches(actual: &Value, expected: &str) -> bool {
+    match actual {
+        Value::String(text) => text == expected,
+        Value::Number(number) => number.to_string() == expected,
+        Value::Bool(flag) => flag.to_string() == expected,
+        other => other.to_string().trim_matches('"') == expected,
+    }
 }
 
 #[cfg(test)]
@@ -139,12 +164,30 @@ mod tests {
     }
 
     #[test]
+    fn parses_multiple_predicates() {
+        let filter =
+            parse_filter("//Target[@nameText='A'][@status='ACTIVE']").expect("parse");
+        assert_eq!(filter.predicates.len(), 2);
+    }
+
+    #[test]
     fn matches_instance_properties() {
         let filter = parse_filter("//Target[nameText=\"FRIEND-1\"]").expect("parse");
         let class_id = SemanticId::parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("id");
         let instance = MimInstance::new("Target", class_id)
             .expect("instance")
             .with_property(PropertyValue::string("nameText", "FRIEND-1"));
+        assert!(instance_matches(&instance, &filter));
+    }
+
+    #[test]
+    fn matches_all_predicates() {
+        let filter = parse_filter("//Target[@nameText='A'][@status='ACTIVE']").expect("parse");
+        let class_id = SemanticId::parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("id");
+        let instance = MimInstance::new("Target", class_id)
+            .expect("instance")
+            .with_property(PropertyValue::string("nameText", "A"))
+            .with_property(PropertyValue::string("status", "ACTIVE"));
         assert!(instance_matches(&instance, &filter));
     }
 }
