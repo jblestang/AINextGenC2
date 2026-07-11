@@ -49,8 +49,6 @@ mod tests {
     use super::*;
     use crate::message::{DeleteObjectRequest, PutObjectRequest};
 
-    use crate::message::{DeleteObjectRequest, PutObjectRequest};
-
     fn test_registry() -> mim_model::ModelRegistry {
         use mim_core::MimUri;
         use mim_model::manifest::{ModelElementKind, ModelElementSpec};
