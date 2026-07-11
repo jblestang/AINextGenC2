@@ -5,6 +5,7 @@
 //! - 1 fire-control system (`FireControl`) with the weapon-tracking radar and 4 TEL launchers
 //! - National C2 ingest of all sensor and equipment data
 //! - Coalition release limited to long-range surveillance tracks only
+//! - Airborne (AWACS) platform position refreshed on each simulation step
 
 use mim_core::{MimError, MimResult, SemanticId};
 use mim_labeling::{ClassificationLevel, LabelPolicy};
@@ -14,8 +15,8 @@ use mim_runtime::{
     InstanceStore, MimInstance, PropertyValue, SerializationFormat, Serializer,
 };
 use mim_transport::{
-    ExchangeBroker, GetByFilterRequest, ReplicationAgent, SecuredExchangeBroker, TransportError,
-    TransportResult,
+    ExchangeBroker, GetByFilterRequest, PutObjectRequest, ReplicationAgent, SecuredExchangeBroker,
+    TransportError, TransportResult,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -33,6 +34,31 @@ pub enum RadarRole {
     SiteAcquisition,
 }
 
+/// Geographic position and kinematics for a mobile sensor platform (e.g. AWACS).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SensorPosition {
+    pub latitude: f64,
+    pub longitude: f64,
+    pub altitude_metres: f64,
+    pub speed_knots: f64,
+    pub heading_degrees: f64,
+}
+
+/// One AWACS position refresh published to national C2.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AirbornePositionUpdate {
+    pub radar_name: String,
+    pub step: u32,
+    pub timestamp: String,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub altitude_metres: f64,
+    pub speed_knots: f64,
+    pub heading_degrees: f64,
+}
+
 /// Configuration for one simulated radar sensor.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -43,6 +69,8 @@ pub struct SitacRadar {
     pub max_range_km: f64,
     pub detections: Vec<RadarDetection>,
     pub coalition_shareable: bool,
+    /// Present for moving platforms (AWACS); position is refreshed each simulation step.
+    pub mobile_platform: Option<SensorPosition>,
 }
 
 /// Fire-control system with embedded weapon-tracking radar and TEL battery.
@@ -86,6 +114,9 @@ pub struct SitacSimulatorOutput {
     pub tels: Vec<String>,
     pub national_targets: Vec<SitacTrackSummary>,
     pub allied_targets: Vec<SitacTrackSummary>,
+    pub airborne_position_updates: Vec<AirbornePositionUpdate>,
+    pub position_refresh_steps: u32,
+    pub position_refresh_interval_seconds: u64,
 }
 
 /// Multi-radar SITAC simulator publishing to national C2 with selective coalition sharing.
@@ -95,6 +126,8 @@ pub struct SitacSimulatorScenario {
     allied_domain_id: String,
     radars: Vec<SitacRadar>,
     fcs: SitacFcs,
+    position_refresh_steps: u32,
+    position_refresh_interval_seconds: u64,
 }
 
 impl Default for SitacSimulatorScenario {
@@ -114,6 +147,7 @@ impl SitacSimulatorScenario {
             role: RadarRole::FcsWeapon,
             sensor_type_code: "TargetAcquisitionRadar".to_owned(),
             max_range_km: 120.0,
+            mobile_platform: None,
             detections: vec![RadarDetection {
                 track_number: 401,
                 call_sign: "FCS-ENGAGE-1".to_owned(),
@@ -130,12 +164,21 @@ impl SitacSimulatorScenario {
         Self {
             national_domain_id: "DOMAIN-HIGH".to_owned(),
             allied_domain_id: "DOMAIN-HIGH".to_owned(),
+            position_refresh_steps: 3,
+            position_refresh_interval_seconds: 60,
             radars: vec![
                 SitacRadar {
                     name: "AWACS-01".to_owned(),
                     role: RadarRole::Airborne,
                     sensor_type_code: "AirborneEarlyWarning".to_owned(),
                     max_range_km: 400.0,
+                    mobile_platform: Some(SensorPosition {
+                        latitude: 50.42,
+                        longitude: 8.95,
+                        altitude_metres: 9_100.0,
+                        speed_knots: 420.0,
+                        heading_degrees: 270.0,
+                    }),
                     detections: vec![RadarDetection {
                         track_number: 201,
                         call_sign: "AEW-CONTACT-1".to_owned(),
@@ -153,6 +196,7 @@ impl SitacSimulatorScenario {
                     role: RadarRole::LongRange,
                     sensor_type_code: "SurveillanceLongRange".to_owned(),
                     max_range_km: 450.0,
+                    mobile_platform: None,
                     detections: vec![
                         RadarDetection {
                             track_number: 301,
@@ -182,6 +226,7 @@ impl SitacSimulatorScenario {
                     role: RadarRole::SiteAcquisition,
                     sensor_type_code: "SiteGroundSurveillance".to_owned(),
                     max_range_km: 80.0,
+                    mobile_platform: None,
                     detections: vec![RadarDetection {
                         track_number: 501,
                         call_sign: "ACQ-LOCAL-1".to_owned(),
@@ -224,7 +269,8 @@ impl SitacSimulatorScenario {
     /// Run ingest to national C2 and coalition replication with selective sharing.
     pub fn run(&self, stack: &MimStack) -> TransportResult<SitacSimulatorOutput> {
         let registry = stack.registry();
-        let store = self.build_store(registry).map_err(TransportError::from)?;
+        let mut store = self.build_store(registry).map_err(TransportError::from)?;
+        let mut mobile_positions = initial_mobile_positions(self, &store);
 
         let shareable_track_numbers = shareable_track_numbers(self);
         let instances: Vec<_> = store
@@ -245,7 +291,36 @@ impl SitacSimulatorScenario {
             &self.national_domain_id,
         )?;
         let national_responses = national_c2.publish_store(instances)?;
-        let national_published_count = national_responses.len();
+        let mut national_published_count = national_responses.len();
+
+        let mut airborne_position_updates = initial_airborne_position_updates(self, &store);
+
+        for step in 1..=self.position_refresh_steps {
+            let refreshed = refresh_mobile_radar_positions(
+                self,
+                &mut store,
+                &mut mobile_positions,
+                step,
+                self.position_refresh_interval_seconds,
+            )?;
+            if refreshed.is_empty() {
+                continue;
+            }
+            for instance in refreshed {
+                let mut labeled = instance;
+                let coalition =
+                    is_coalition_releasable(&labeled, &shareable_track_numbers);
+                label_instance(&mut labeled, ClassificationLevel::Secret, coalition);
+                national_c2.put_object(PutObjectRequest { instance: labeled })?;
+                national_published_count += 1;
+            }
+            airborne_position_updates.extend(refreshed_position_updates(
+                self,
+                &store,
+                step,
+                self.position_refresh_interval_seconds,
+            ));
+        }
 
         let mut allied_broker = ExchangeBroker::new(registry.clone());
         let replication = ReplicationAgent::pull_and_apply(&mut allied_broker, national_c2.broker(), 0)?;
@@ -326,6 +401,9 @@ impl SitacSimulatorScenario {
             tels: self.fcs.tel_names.clone(),
             national_targets: national_target_summaries,
             allied_targets: allied_target_summaries,
+            airborne_position_updates,
+            position_refresh_steps: self.position_refresh_steps,
+            position_refresh_interval_seconds: self.position_refresh_interval_seconds,
         })
     }
 }
@@ -434,7 +512,7 @@ fn build_radar(registry: &ModelRegistry, radar: &SitacRadar) -> MimResult<MimIns
     let mut metadata = Metadata::default();
     metadata.reporter.name = mim_core::Nillable::value(radar.name.clone());
 
-    Ok(MimInstance::new(class_name, class_id)?
+    let mut instance = MimInstance::new(class_name, class_id)?
         .with_property(PropertyValue::string("nameText", &radar.name))
         .with_property(PropertyValue::string("sensorTypeCode", &radar.sensor_type_code))
         .with_property(PropertyValue::string("operationalStatusCode", "Active"))
@@ -443,7 +521,201 @@ fn build_radar(registry: &ModelRegistry, radar: &SitacRadar) -> MimResult<MimIns
             "roleCode",
             &format!("{:?}", radar.role),
         ))
-        .with_metadata(metadata))
+        .with_metadata(metadata);
+
+    if let Some(position) = radar.mobile_platform {
+        instance = apply_sensor_position(instance, position, 0);
+    }
+
+    Ok(instance)
+}
+
+fn apply_sensor_position(
+    mut instance: MimInstance,
+    position: SensorPosition,
+    step: u32,
+) -> MimInstance {
+    upsert_property(
+        &mut instance,
+        PropertyValue::json(
+            "position",
+            json!({
+                "latitude": position.latitude,
+                "longitude": position.longitude,
+                "altitudeMetres": position.altitude_metres,
+            }),
+        ),
+    );
+    upsert_property(
+        &mut instance,
+        PropertyValue::json(
+            "kinematics",
+            json!({
+                "speedKnots": position.speed_knots,
+                "headingDegrees": position.heading_degrees,
+            }),
+        ),
+    );
+    upsert_property(
+        &mut instance,
+        PropertyValue::json(
+            "positionUpdateDateTime",
+            json!(format_position_timestamp(step)),
+        ),
+    );
+    instance
+}
+
+fn upsert_property(instance: &mut MimInstance, property: PropertyValue) {
+    if let Some(existing) = instance
+        .properties
+        .iter_mut()
+        .find(|p| p.name == property.name)
+    {
+        *existing = property;
+    } else {
+        instance.properties.push(property);
+    }
+}
+
+fn advance_position(position: SensorPosition, elapsed_seconds: f64) -> SensorPosition {
+    let distance_nm = position.speed_knots * elapsed_seconds / 3600.0;
+    let heading_rad = position.heading_degrees.to_radians();
+    let lat_delta = distance_nm * heading_rad.cos() / 60.0;
+    let lon_scale = position.latitude.to_radians().cos().max(0.01);
+    let lon_delta = distance_nm * heading_rad.sin() / (60.0 * lon_scale);
+
+    SensorPosition {
+        latitude: position.latitude + lat_delta,
+        longitude: position.longitude + lon_delta,
+        ..position
+    }
+}
+
+fn initial_mobile_positions(
+    scenario: &SitacSimulatorScenario,
+    store: &InstanceStore,
+) -> Vec<(String, mim_runtime::oid::ObjectIdentifier, SensorPosition)> {
+    scenario
+        .radars
+        .iter()
+        .filter_map(|radar| {
+            let position = radar.mobile_platform?;
+            let oid = store
+                .instances()
+                .find(|instance| radar_instance_name(instance) == Some(radar.name.as_str()))?
+                .oid
+                .clone();
+            Some((radar.name.clone(), oid, position))
+        })
+        .collect()
+}
+
+fn initial_airborne_position_updates(
+    scenario: &SitacSimulatorScenario,
+    _store: &InstanceStore,
+) -> Vec<AirbornePositionUpdate> {
+    scenario
+        .radars
+        .iter()
+        .filter_map(|radar| {
+            let position = radar.mobile_platform?;
+            Some(AirbornePositionUpdate {
+                radar_name: radar.name.clone(),
+                step: 0,
+                timestamp: format_position_timestamp(0),
+                latitude: position.latitude,
+                longitude: position.longitude,
+                altitude_metres: position.altitude_metres,
+                speed_knots: position.speed_knots,
+                heading_degrees: position.heading_degrees,
+            })
+        })
+        .collect()
+}
+
+fn refresh_mobile_radar_positions(
+    scenario: &SitacSimulatorScenario,
+    store: &mut InstanceStore,
+    mobile_positions: &mut [(String, mim_runtime::oid::ObjectIdentifier, SensorPosition)],
+    step: u32,
+    interval_seconds: u64,
+) -> TransportResult<Vec<MimInstance>> {
+    let mut refreshed = Vec::new();
+    for (name, oid, position) in mobile_positions.iter_mut() {
+        let radar = scenario
+            .radars
+            .iter()
+            .find(|r| r.name == *name)
+            .ok_or_else(|| {
+                TransportError::Validation(format!("mobile radar '{name}' not in scenario"))
+            })?;
+        if radar.mobile_platform.is_none() {
+            continue;
+        }
+
+        *position = advance_position(*position, interval_seconds as f64);
+        let instance = store.get_mut(oid).ok_or_else(|| {
+            TransportError::Validation(format!("radar instance '{name}' missing from store"))
+        })?;
+        *instance = apply_sensor_position(instance.clone(), *position, step);
+        refreshed.push(instance.clone());
+    }
+    Ok(refreshed)
+}
+
+fn refreshed_position_updates(
+    scenario: &SitacSimulatorScenario,
+    store: &InstanceStore,
+    step: u32,
+    interval_seconds: u64,
+) -> Vec<AirbornePositionUpdate> {
+    scenario
+        .radars
+        .iter()
+        .filter_map(|radar| {
+            let _ = radar.mobile_platform?;
+            let instance = store.instances().find(|i| {
+                radar_instance_name(i) == Some(radar.name.as_str())
+            })?;
+            let position = read_sensor_position(instance)?;
+            Some(AirbornePositionUpdate {
+                radar_name: radar.name.clone(),
+                step,
+                timestamp: format_position_timestamp(step * interval_seconds as u32),
+                latitude: position.latitude,
+                longitude: position.longitude,
+                altitude_metres: position.altitude_metres,
+                speed_knots: position.speed_knots,
+                heading_degrees: position.heading_degrees,
+            })
+        })
+        .collect()
+}
+
+fn radar_instance_name(instance: &MimInstance) -> Option<&str> {
+    instance
+        .property("nameText")
+        .and_then(|p| p.value.as_option())
+        .and_then(|v| v.as_str())
+}
+
+fn read_sensor_position(instance: &MimInstance) -> Option<SensorPosition> {
+    let position = instance.property("position")?.value.as_option()?;
+    let kinematics = instance.property("kinematics")?.value.as_option()?;
+    Some(SensorPosition {
+        latitude: position.get("latitude")?.as_f64()?,
+        longitude: position.get("longitude")?.as_f64()?,
+        altitude_metres: position.get("altitudeMetres")?.as_f64()?,
+        speed_knots: kinematics.get("speedKnots")?.as_f64()?,
+        heading_degrees: kinematics.get("headingDegrees")?.as_f64()?,
+    })
+}
+
+fn format_position_timestamp(step_or_seconds: u32) -> String {
+    let minutes = step_or_seconds / 60;
+    let seconds = step_or_seconds % 60;
+    format!("2026-07-11T14:{minutes:02}:{seconds:02}Z")
 }
 
 fn build_fcs(registry: &ModelRegistry, fcs: &SitacFcs) -> MimResult<MimInstance> {
@@ -697,6 +969,43 @@ mod tests {
                 Some("AEW-CONTACT-1" | "FCS-ENGAGE-1" | "ACQ-LOCAL-1")
             )
         }));
+    }
+
+    #[test]
+    fn awacs_has_initial_position_and_refreshes_on_run() {
+        let stack = MimStack::load().expect("stack");
+        let output = SitacSimulatorScenario::demo().run(&stack).expect("run");
+
+        assert_eq!(output.position_refresh_steps, 3);
+        assert_eq!(output.airborne_position_updates.len(), 4);
+        assert_eq!(output.airborne_position_updates[0].step, 0);
+        assert_eq!(output.airborne_position_updates[0].radar_name, "AWACS-01");
+
+        let initial_lon = output.airborne_position_updates[0].longitude;
+        let final_lon = output
+            .airborne_position_updates
+            .last()
+            .expect("final")
+            .longitude;
+        assert!(
+            final_lon < initial_lon,
+            "AWACS heading 270° should move west: {initial_lon} -> {final_lon}"
+        );
+        assert!(output.national_published_count > 19);
+    }
+
+    #[test]
+    fn advance_position_moves_west_on_heading_270() {
+        let start = SensorPosition {
+            latitude: 50.42,
+            longitude: 8.95,
+            altitude_metres: 9_100.0,
+            speed_knots: 420.0,
+            heading_degrees: 270.0,
+        };
+        let advanced = advance_position(start, 60.0);
+        assert!(advanced.longitude < start.longitude);
+        assert!((advanced.latitude - start.latitude).abs() < 0.001);
     }
 
     #[test]

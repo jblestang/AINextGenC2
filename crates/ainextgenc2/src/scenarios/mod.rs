@@ -12,7 +12,7 @@ pub use allied_sensor_retrieval::{
 };
 pub use dcs_cross_domain::{DcsCrossDomainScenario, DcsScenarioOutput};
 pub use sitac_simulator::{
-    RadarRole, SitacFcs, SitacRadar, SitacSimulatorOutput, SitacSimulatorScenario,
-    SitacTrackSummary,
+    AirbornePositionUpdate, RadarRole, SensorPosition, SitacFcs, SitacRadar,
+    SitacSimulatorOutput, SitacSimulatorScenario, SitacTrackSummary,
 };
 pub use transport_exchange::{TransportExchangeScenario, TransportScenarioOutput};

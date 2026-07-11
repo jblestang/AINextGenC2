@@ -50,6 +50,24 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         output.national_only_hidden_from_allied
     );
     println!();
+    println!(
+        "AWACS position refreshes ({} steps @ {}s):",
+        output.position_refresh_steps, output.position_refresh_interval_seconds
+    );
+    for update in &output.airborne_position_updates {
+        println!(
+            "  step {} {} @ {:.4},{:.4} alt {}m {}kt hdg {}° [{}]",
+            update.step,
+            update.radar_name,
+            update.latitude,
+            update.longitude,
+            update.altitude_metres as u32,
+            update.speed_knots as u32,
+            update.heading_degrees as u32,
+            update.timestamp
+        );
+    }
+    println!();
     println!("National C2 target picture:");
     for target in &output.national_targets {
         let name = target.name.as_deref().unwrap_or("(unnamed)");
