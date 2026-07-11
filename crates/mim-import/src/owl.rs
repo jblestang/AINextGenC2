@@ -41,11 +41,32 @@ impl OwlModel {
         owl_xml::parse(data)
     }
 
-    /// Count OWL property references in raw XML (opening tags, closing tags, restrictions).
-    pub fn count_xml_property_references(data: &str) -> usize {
+    /// Count OWL property XML tag lines (opening + closing; diagnostic only).
+    pub fn count_xml_property_tag_lines(data: &str) -> usize {
         data.lines()
             .filter(|line| line.contains("ObjectProperty") || line.contains("DatatypeProperty"))
             .count()
+    }
+
+    /// Properties with a resolved `domain` value.
+    pub fn properties_with_domain_count(&self) -> usize {
+        self.properties
+            .values()
+            .filter(|property| property.domain.is_some())
+            .count()
+    }
+
+    /// Iteratively resolve missing domains via inverse and sub-property inheritance.
+    pub fn resolve_property_domains(&mut self) {
+        loop {
+            let before = self.properties_with_domain_count();
+            self.resolve_inverse_domains();
+            self.resolve_subproperty_domains();
+            let after = self.properties_with_domain_count();
+            if after == before {
+                break;
+            }
+        }
     }
 
     pub fn class_names(&self) -> impl Iterator<Item = &String> {
@@ -112,6 +133,39 @@ impl OwlModel {
             }
             if entry.range.is_none() {
                 entry.range = range;
+            }
+        }
+    }
+
+    /// Inherit domain/range from `rdfs:subPropertyOf` parents.
+    pub fn resolve_subproperty_domains(&mut self) {
+        let mut inheritance = Vec::new();
+        for (name, property) in &self.properties {
+            for parent_name in &property.parents {
+                if let Some(parent) = self.properties.get(parent_name) {
+                    inheritance.push((
+                        name.clone(),
+                        parent.domain.clone(),
+                        parent.range.clone(),
+                        parent.property_type,
+                    ));
+                }
+            }
+        }
+
+        for (name, domain, range, kind) in inheritance {
+            let entry = self.properties.entry(name).or_insert_with(|| OwlProperty {
+                name: "unknown".into(),
+                ..OwlProperty::default()
+            });
+            if entry.domain.is_none() {
+                entry.domain = domain;
+            }
+            if entry.range.is_none() {
+                entry.range = range;
+            }
+            if entry.property_type == OwlPropertyKind::Object && kind == OwlPropertyKind::Data {
+                entry.property_type = kind;
             }
         }
     }
@@ -337,6 +391,18 @@ mod owl_xml {
             if let (Some(child), Some(parent)) = (state.current_class.clone(), resource_ref(e)) {
                 add_parent(model, &child, parent);
             }
+        } else if name == "subPropertyOf" {
+            if let (Some(child), Some(parent)) =
+                (state.current_property.clone(), resource_ref(e))
+            {
+                let entry = model.properties.entry(child.clone()).or_insert_with(|| super::OwlProperty {
+                    name: child.clone(),
+                    ..super::OwlProperty::default()
+                });
+                if !entry.parents.contains(&parent) {
+                    entry.parents.push(parent);
+                }
+            }
         } else if name == "domain" {
             if let Some(domain) = resource_ref(e) {
                 if let Some(prop) = &state.current_property {
@@ -544,6 +610,37 @@ mod tests {
     }
 
     #[test]
+    fn resolve_property_domains_loops_until_stable() {
+        const SAMPLE: &str = r##"<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">
+  <owl:Class rdf:ID="ACTION-CONTEXT"/>
+  <owl:Class rdf:ID="ACTION-CONTEXT-STATUS"/>
+  <owl:ObjectProperty rdf:ID="AC-has-ACS">
+    <rdfs:domain rdf:resource="#ACTION-CONTEXT"/>
+    <rdfs:range rdf:resource="#ACTION-CONTEXT-STATUS"/>
+    <owl:inverseOf rdf:resource="#ACS-is-ascribed-to-AC"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="ACS-is-ascribed-to-AC"/>
+  <owl:DatatypeProperty rdf:ID="childSpeed">
+    <owl:subPropertyOf rdf:resource="#parentSpeed"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="parentSpeed">
+    <rdfs:domain rdf:resource="#ACTION-CONTEXT"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#decimal"/>
+  </owl:DatatypeProperty>
+</rdf:RDF>"##;
+        let mut model = OwlModel::parse_xml(SAMPLE).expect("parse");
+        model.resolve_property_domains();
+        assert_eq!(model.properties_with_domain_count(), 4);
+        let inverse = model.properties.get("ACS-is-ascribed-to-AC").expect("inverse");
+        assert_eq!(inverse.domain.as_deref(), Some("ACTION-CONTEXT-STATUS"));
+        let child = model.properties.get("childSpeed").expect("child");
+        assert_eq!(child.domain.as_deref(), Some("ACTION-CONTEXT"));
+    }
+
+    #[test]
     fn parses_self_closing_inverse_property_stubs() {
         const SAMPLE: &str = r##"<?xml version="1.0"?>
 <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
@@ -560,7 +657,7 @@ mod tests {
 </rdf:RDF>"##;
         let mut model = OwlModel::parse_xml(SAMPLE).expect("parse");
         assert_eq!(model.properties.len(), 2);
-        model.resolve_inverse_domains();
+        model.resolve_property_domains();
         let inverse = model.properties.get("ACS-is-ascribed-to-AC").expect("inverse");
         assert_eq!(inverse.domain.as_deref(), Some("ACTION-CONTEXT-STATUS"));
         assert_eq!(inverse.range.as_deref(), Some("ACTION-CONTEXT"));

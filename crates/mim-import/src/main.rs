@@ -71,7 +71,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         report.total_elements
     );
     println!(
-        "owl_properties={} referenced={} with_domain={} imported={} skipped={} coverage={:.1}% target={:.0}% ({})",
+        "owl_properties={} xml_tag_lines={} with_domain={} imported={} skipped={} coverage={:.1}% target={:.0}% ({})",
         report.owl_properties_total,
         report.owl_properties_referenced,
         report.owl_properties_with_domain,
