@@ -31,7 +31,16 @@ cargo run -p ainextgenc2
 cargo run -p ainextgenc2 -- /path/to/mim-manifest.json
 ```
 
-The bundled seed manifest (`models/mim-core-5.1.json`) implements foundational MIM concepts from public documentation (Object/Action/Metadata taxonomy, MilitaryConvoy attributes, UnitRangeCode, nil-reason, metadata). **Full MIM 5.1 compliance** requires importing the complete model from [mimworld.org](https://www.mimworld.org) (member access) as JSON manifest, OWL, or XSD.
+The workspace loads `models/mim-full-5.1.json` when present (generated from JC3IEDM OWL + MIM core seed). Regenerate with:
+
+```bash
+curl -sL -o /tmp/jc3iedm.owl \
+  https://raw.githubusercontent.com/city-artificial-intelligence/diso/main/information-exchange/JC3IEDM/JC3IEDM.owl
+cargo run -p mim-import -- --owl /tmp/jc3iedm.owl \
+  --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
+```
+
+For authoritative MIM 5.1+ semantics, replace the import source with official mimworld.org OWL/XSD exports when available.
 
 Targets for full compliance (MIM 5.1 scale):
 

@@ -17,7 +17,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let stack = match path {
         Some(p) => MimStack::load_path(p)?,
-        None => MimStack::load_core_seed()?,
+        None => MimStack::load()?,
     };
 
     let report = stack.compliance_report();

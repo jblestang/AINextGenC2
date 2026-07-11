@@ -15,6 +15,15 @@ pub struct MimStack {
 }
 
 impl MimStack {
+    /// Load the best available manifest: full import if present, else core seed.
+    pub fn load() -> MimResult<Self> {
+        let full_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../models/mim-full-5.1.json");
+        if std::path::Path::new(full_path).exists() {
+            return Self::load_path(full_path);
+        }
+        Self::load_core_seed()
+    }
+
     /// Load the bundled core seed manifest.
     pub fn load_core_seed() -> MimResult<Self> {
         Self::load_embedded(include_str!(concat!(
@@ -72,9 +81,21 @@ mod tests {
     }
 
     #[test]
-    fn core_seed_is_not_yet_fully_compliant() {
-        let stack = MimStack::load_core_seed().expect("stack");
+    fn loads_full_manifest_when_present() {
+        let full_path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../models/mim-full-5.1.json");
+        if !std::path::Path::new(full_path).exists() {
+            return;
+        }
+        let stack = MimStack::load_path(full_path).expect("full stack");
         let report = stack.compliance_report();
-        assert!(!report.is_fully_compliant);
+        assert!(report.is_fully_compliant);
+    }
+
+    #[test]
+    fn load_prefers_full_manifest() {
+        let stack = MimStack::load().expect("stack");
+        assert!(stack.registry().object_type_count() >= 2300);
+        assert!(stack.registry().action_type_count() >= 500);
+        assert!(stack.registry().code_list_count() >= 400);
     }
 }

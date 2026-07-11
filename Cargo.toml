@@ -5,6 +5,7 @@ members = [
     "crates/mim-model",
     "crates/mim-runtime",
     "crates/mim-compliance",
+    "crates/mim-import",
     "crates/ainextgenc2",
 ]
 default-members = ["crates/ainextgenc2"]
@@ -21,11 +22,12 @@ mim-core = { path = "crates/mim-core" }
 mim-model = { path = "crates/mim-model" }
 mim-runtime = { path = "crates/mim-runtime" }
 mim-compliance = { path = "crates/mim-compliance" }
+mim-import = { path = "crates/mim-import" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 thiserror = "2.0"
-uuid = { version = "=1.8.0", features = ["serde", "v4"] }
+uuid = { version = "=1.8.0", features = ["serde", "v4", "v5"] }
 chrono = { version = "0.4", features = ["serde"] }
 quick-xml = { version = "0.37", features = ["serialize"] }
 indexmap = { version = "=2.2.6", features = ["serde"] }
