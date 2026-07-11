@@ -2,6 +2,8 @@
 
 This document describes **how the stack implements** NATO/STANAG requirements — crates, algorithms, protocols, and build options.
 
+**Precise status:** [STATUS.md](./STATUS.md)
+
 ## Crate map
 
 | Crate | Technology role |
@@ -230,19 +232,31 @@ let pep = PolicyEnforcementPoint::from_preset_high_to_low()
 ## MIM import (`mim-import`)
 
 ```bash
-# Authoritative mimworld JC3IEDM (falls back to DISO mirror, then bundled OWL)
-cargo run -p mim-import -- --source mimworld \
+# Bundled JC3IEDM (offline, reproducible) — recommended
+cargo run -p mim-import -- --source bundled:jc3iedm \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 
-# Offline bundled JC3IEDM (reproducible)
-cargo run -p mim-import -- --source bundled:jc3iedm \
+# Authoritative mimworld JC3IEDM (falls back to DISO mirror, then bundled OWL)
+cargo run -p mim-import -- --source mimworld \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 
 # Local OWL file
 cargo run -p mim-import -- --owl /path/to/JC3IEDM.owl --output models/mim-full-5.1.json
 ```
 
-HTTP fetch uses `ureq` with TLS. Bundled ontology: `models/ontology/JC3IEDM.owl`. Set `authoritative_mimworld` to skip synthetic OWL padding.
+Import pipeline (`OwlImporter`):
+
+| Step | Function | Result |
+|------|----------|--------|
+| Parse OWL | `OwlModel::parse_xml` | 932 declared properties |
+| Resolve domains | `resolve_property_domains()` | `inverseOf` + `subPropertyOf` loop |
+| Build taxonomy | class import + `ensure_property_domains_in_taxonomy` | 2,300 objects, 500 actions |
+| Import attributes | `import_owl_attributes()` | 932/932 imported (100%) |
+| Merge seed | `mim-core-5.1.json` | +4 metadata attributes → 936 total |
+
+CLI reports: `owl_properties`, `xml_tag_lines` (diagnostic), `coverage`, `target`.
+
+Set `authoritative_mimworld` to skip synthetic taxonomy padding.
 
 ## Language and quality constraints
 
@@ -277,17 +291,24 @@ flowchart LR
 
 ## Testing matrix
 
-| Suite | Command | Coverage |
-|-------|---------|----------|
-| ADatP conformance | `cargo test -p mim-adatp-conformance` | 4774 Table 17, Annex B, 4774.1 ACME, 4778, SPIF, ZTDF |
-| Labeling compliance | `cargo test -p mim-labeling-compliance` | 12 dimensions |
-| DCS scenario | `cargo test -p ainextgenc2 dcs_scenario` | End-to-end downgrade + ZTDF |
-| HTTP envelope | `cargo test -p mim-transport-http handle_put` | Trust store verification |
-| Crypto / PKI | `cargo test -p mim-crypto` | NMBS round-trip, PKI load |
-| Audit chain | `cargo test -p mim-audit` | Chain + signature |
-| SPIF admin | `cargo test -p mim-policy spif` | PAP + guard domains |
+| Suite | Command | Current result |
+|-------|---------|----------------|
+| MIM 5.1 compliance | `cargo run -p ainextgenc2` | **100%** — 8/8 dimensions |
+| Labeling compliance | `cargo run -p ainextgenc2 -- --labeling` | **100%** — 12/12 dimensions |
+| MIP4-IES conformance | `cargo run -p ainextgenc2 -- --mip4` | **100%** — 140/140 checks |
+| ADatP conformance | `cargo run -p ainextgenc2 -- --adatp` | **100%** — 39/39 tests |
+| ADatP unit tests | `cargo test -p mim-adatp-conformance` | Pass |
+| Labeling unit tests | `cargo test -p mim-labeling-compliance` | Pass |
+| DCS scenario | `cargo test -p ainextgenc2 dcs_scenario` | Pass |
+| OWL import | `cargo test -p mim-import` | Pass — 932 properties |
+| HTTP envelope | `cargo test -p mim-transport-http handle_put` | Pass |
+| Crypto / PKI | `cargo test -p mim-crypto` | Pass |
+| Audit chain | `cargo test -p mim-audit` | Pass |
+| SPIF admin | `cargo test -p mim-policy spif` | Pass |
 
 ## Related documents
 
+- [STATUS.md](./STATUS.md) — precise compliance numbers and operational readiness
 - [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md) — system-level architecture and flows
+- [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md) — operational gaps
 - [../README.md](../README.md) — workspace overview and quick start

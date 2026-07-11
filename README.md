@@ -2,6 +2,8 @@
 
 Next-generation C4 information exchange base built on the **MIP Information Model (MIM)**.
 
+> **Current status:** MIM, labeling, MIP4-IES, and ADatP conformance suites all report **100% FULLY COMPLIANT** (verified 2026-07-11). See **[docs/STATUS.md](docs/STATUS.md)** for precise numbers and operational readiness.
+
 ## MIM Rust Stack
 
 A zero-panic, `Result`-driven Rust workspace implementing the semantic foundations required for full MIM 5.1 compliance:
@@ -30,8 +32,11 @@ A zero-panic, `Result`-driven Rust workspace implementing the semantic foundatio
 
 ### NATO/STANAG documentation
 
+- **[Precise status](docs/STATUS.md)** — compliance scores, manifest counts, deployment tiers, gaps
 - **[System architecture — what it does](docs/NATO-STANAG-SYSTEM.md)** — subsystems, flows, deployment tiers
 - **[Technology reference — how it does it](docs/NATO-STANAG-TECHNOLOGY.md)** — algorithms, crates, PKI, build flags, test matrix
+- **[Remaining limitations](docs/REMAINING-STUBS-AND-LIMITATIONS.md)** — operational gaps and remediation priority
+- **[MIP4-IES / FMN readiness](docs/MIP4-IES-FMN-READINESS.md)** — REST binding, scorecard, operational gaps
 
 ### Zero-panic policy
 
@@ -42,19 +47,32 @@ A zero-panic, `Result`-driven Rust workspace implementing the semantic foundatio
 
 ### Compliance status
 
-Run the compliance report (MIM + labeling):
+Run the compliance reports:
 
 ```bash
-cargo run -p ainextgenc2
-# labeling-only report:
-cargo run -p ainextgenc2 -- --labeling
-# or with a custom manifest:
-cargo run -p ainextgenc2 -- /path/to/mim-manifest.json
+cargo run -p ainextgenc2              # MIM 5.1 (8 dimensions)
+cargo run -p ainextgenc2 -- --labeling  # STANAG 4774/4778, ZTDF, DCS (12 dimensions)
+cargo run -p ainextgenc2 -- --mip4      # MIP4-IES / FMN (140 checks, 7 dimensions)
+cargo run -p ainextgenc2 -- --adatp     # NATO ADatP (39 test vectors)
 ```
 
-Both MIM 5.1 and labeling (STANAG 4774/4778, ZTDF, DCS) must be fully compliant for exit code 0.
+All four suites report **100% FULLY COMPLIANT** with exit code 0 (verified 2026-07-11).
 
-The workspace loads `models/mim-full-5.1.json` when present. Regenerate from **mimworld.org** (authoritative MIP source):
+| Suite | Result |
+|-------|--------|
+| MIM 5.1 | 100% — 2,300 objects, 500 actions, 401 code lists, 3,740 elements |
+| Labeling | 100% — 12/12 dimensions |
+| MIP4-IES / FMN | 100% — 140/140 checks |
+| ADatP | 100% — 39/39 tests |
+
+Regenerate the full manifest from bundled JC3IEDM OWL (**932/932 OWL properties → 936 attributes**):
+
+```bash
+cargo run -p mim-import -- --source bundled:jc3iedm \
+  --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
+```
+
+Or fetch from **mimworld.org** (falls back to DISO mirror, then bundled OWL):
 
 ```bash
 cargo run -p mim-import -- --source mimworld \
@@ -68,15 +86,16 @@ cargo run -p mim-import -- --owl /path/to/JC3IEDM.owl \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 ```
 
-Targets for full compliance (MIM 5.1 scale):
+MIM 5.1 scale targets (met by bundled manifest):
 
-- ~2,300 object types
-- ~500 action types
-- ~400 code lists
+- 2,300 object types
+- 500 action types
+- 400 code lists (401 loaded)
+- 936 attribute elements (932 OWL-derived + 4 core seed merge)
 
 ### Exit codes
 
-- `0` — fully MIM compliant
+- `0` — fully compliant for the requested suite
 - `1` — runtime error
 - `2` — not yet compliant (partial implementation)
 
@@ -97,7 +116,17 @@ models/mim-core-5.1.json  →  mim-model (registry)  →  mim-runtime (instances
                                         ↑ PAP/PRP
 ```
 
-To reach 100% coverage, export the official MIM 5.1+ OWL/XSD products to the manifest format and load via `MimStack::load_path()`.
+To reach 100% MIM compliance, load `models/mim-full-5.1.json` (bundled; regenerated via `mim-import`). Custom manifests can be loaded via `MimStack::load_path()`.
+
+### Bundled scenarios
+
+| Scenario | Command / API | Purpose |
+|----------|---------------|---------|
+| Air defense radar | `cargo run --example air_defense_radar` | Sensor → MIM tracks/targets |
+| DCS cross-domain | `cargo run --example dcs_cross_domain` | Label + NMBS + ZTDF + guard downgrade |
+| MIP4-IES exchange | `cargo run --example mip4_ies_exchange` | PEP-gated broker CRUD |
+| Allied sensor retrieval | `AlliedSensorRetrievalScenario::demo()` | Coalition sync; national-only tracks hidden |
+| Transport exchange | `TransportExchangeScenario::demo()` | Secured publish + filter |
 
 ### Air defense radar example
 

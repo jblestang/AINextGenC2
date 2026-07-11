@@ -2,6 +2,8 @@
 
 This document describes **what the MIM stack does** from a NATO information-exchange and data-centric security perspective.
 
+**Precise compliance and readiness status:** [STATUS.md](./STATUS.md)
+
 ## Purpose
 
 AINextGenC2 implements a **MIP Information Model (MIM) exchange stack** with NATO-standard confidentiality labeling, metadata binding, cross-domain guard, and MIP4-IES transport. It enables coalition C2 systems to:
@@ -118,7 +120,26 @@ Append-only audit log with:
 
 ### Import (`mim-import`)
 
-Fetches JC3IEDM/MIM OWL from **mimworld.org** or local files and merges into the workspace manifest for authoritative MIM semantics.
+Imports JC3IEDM/MIM OWL into the workspace manifest. Pipeline:
+
+1. Parse all declared OWL properties (932 from bundled JC3IEDM)
+2. Resolve domains via `inverseOf` / `subPropertyOf` loop
+3. Import attributes with taxonomy ancestor-walk (100% declared property coverage)
+4. Merge `mim-core-5.1.json` metadata seed
+
+Source chain: **mimworld.org** → DISO mirror → bundled `models/ontology/JC3IEDM.owl`.
+
+## Bundled scenarios
+
+| Scenario | Demonstrates |
+|----------|--------------|
+| `air_defense_radar` | Sensor → MIM `TrackIdentifier` + `Target` |
+| `dcs_cross_domain` | STANAG 4774/4778 + ZTDF + DCS guard downgrade |
+| `mip4_ies_exchange` | PEP-gated MIP4-IES broker |
+| `allied_sensor_retrieval` | Coalition replication; national-only tracks hidden from allies |
+| `transport_exchange` | Secured publish + filter |
+
+All scenarios use synthetic data — not connected to live C2 systems. Mission-compartment (SAR, LOC, national/coalition separation) scenarios are planned; see [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md).
 
 ## Typical operational flows
 
@@ -139,22 +160,25 @@ Fetches JC3IEDM/MIM OWL from **mimworld.org** or local files and merges into the
 
 ## Compliance verification
 
-Run automated NATO ADatP and labeling compliance suites:
+All automated conformance suites currently report **100% FULLY COMPLIANT**:
 
 ```bash
+cargo run -p ainextgenc2              # MIM 5.1 — 8 dimensions
+cargo run -p ainextgenc2 -- --labeling  # Labeling — 12 dimensions
+cargo run -p ainextgenc2 -- --mip4      # MIP4-IES — 140 checks
+cargo run -p ainextgenc2 -- --adatp     # ADatP — 39 test vectors
 cargo test -p mim-adatp-conformance
 cargo test -p mim-labeling-compliance
-cargo test -p ainextgenc2
 ```
 
-Exit code 0 on `cargo run -p ainextgenc2 -- --labeling` indicates full labeling compliance across 12 dimensions.
+See [STATUS.md](./STATUS.md) for exact counts.
 
 ## Deployment tiers
 
-| Tier | Supported today |
-|------|-----------------|
-| Development / lab | Full stack with conformance keys |
-| Coalition exercise | PKI-backed NMBTrustStore, TLS, SPIF-administered guard |
-| Classified accredited | Requires FIPS-validated crypto module build, WORM audit storage, formal guard accreditation (see technology doc) |
+| Tier | Status | Requirements |
+|------|--------|--------------|
+| Development / lab | **Ready** | Conformance PKI; all suites pass |
+| Coalition exercise | **Partial** | Production PKI (`NmbTrustStore`), TLS/mTLS, SPIF-administered guard, durable audit |
+| Classified accredited | **Not ready** | FIPS-validated crypto module, WORM audit, HSM, formal guard accreditation |
 
 See [NATO-STANAG-TECHNOLOGY.md](./NATO-STANAG-TECHNOLOGY.md) for implementation and technology choices.

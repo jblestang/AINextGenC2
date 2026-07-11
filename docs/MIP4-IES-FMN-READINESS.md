@@ -2,6 +2,8 @@
 
 Progress toward **FMN MIP4 Profile** / **MIP4-IES 4.4** REST binding conformance and accreditation.
 
+**Precise compliance status:** [STATUS.md](./STATUS.md) — automated suite reports **100% FULLY COMPLIANT** (140/140 checks, verified 2026-07-11).
+
 ## REST service interface (MIP4-IES 4.4)
 
 | Method | Path | Operation | Status |
@@ -91,19 +93,21 @@ Use `mim_transport::encode_oid_for_path()`.
 
 ## Dimensional accreditation scorecard
 
-`cargo run -p ainextgenc2 -- --mip4` evaluates **seven FMN dimensions**; each must score **≥95%** for accreditation readiness:
+`cargo run -p ainextgenc2 -- --mip4` evaluates **seven FMN dimensions**. Each dimension must score **≥95%** for accreditation readiness; the current automated suite scores **100%** on all seven.
 
-| Dimension | Scope |
-|-----------|--------|
-| REST operations | CRUD, sync, pagination, REST route parsing |
-| REST binding | Media types, JSON-LD, XPath, MIM-Version, envelopes |
-| Message schemas | JSON/XML/JSON-LD roundtrip, XSD, JSON schema validation |
-| Replication | Journal, sync, `ReplicationAgent`, persistence |
-| MIM semantics | Validator, registry, PutObject validation |
-| FMN security | STANAG 4778 envelopes, PEP clearance, secured sync |
-| Accreditation | NATO-style fixtures, interop vectors, full-stack |
+| Dimension | Scope | Current |
+|-----------|--------|---------|
+| REST operations | CRUD, sync, pagination, REST route parsing | **100%** |
+| REST binding | Media types, JSON-LD, XPath, MIM-Version, envelopes | **100%** |
+| Message schemas | JSON/XML/JSON-LD roundtrip, XSD, JSON schema validation | **100%** |
+| Replication | Journal, sync, `ReplicationAgent`, persistence | **100%** |
+| MIM semantics | Validator, registry, PutObject validation | **100%** |
+| FMN security | STANAG 4778 envelopes, PEP clearance, secured sync | **100%** |
+| Accreditation | NATO-style fixtures, interop vectors, full-stack | **100%** |
 
-Current automated suite: **140 checks** across all dimensions.
+**Result:** **140/140 checks pass** — exit code 0, **FULLY COMPLIANT** (verified 2026-07-11).
+
+Operational pilot gaps (JSON-LD wire profile, live HTTPS E2E, NATO-provided vectors) remain; see [Remaining FMN gaps](#remaining-fmn-gaps) and [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md).
 
 ## Verification
 
