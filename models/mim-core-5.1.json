@@ -1,0 +1,347 @@
+{
+  "version": "5.1.0",
+  "releaseDate": "2020-09-28",
+  "description": "AINextGenC2 MIM core seed manifest — foundational Object/Action/Metadata taxonomy aligned with MIM 5.1 public documentation. Import full MIM OWL/XSD from mimworld.org to reach 100% coverage.",
+  "expectedObjectTypes": 2300,
+  "expectedActionTypes": 500,
+  "expectedCodeLists": 400,
+  "taxonomy": [
+    {
+      "name": "Object",
+      "semanticId": "00000001-0001-4001-8001-000000000001",
+      "parent": null,
+      "objectKind": null,
+      "actionKind": null,
+      "definition": "Root classifier for all MIM objects exchanged in C2 operations.",
+      "packagePath": "Classifiers::Object"
+    },
+    {
+      "name": "Action",
+      "semanticId": "00000002-0002-4002-8002-000000000002",
+      "parent": null,
+      "objectKind": null,
+      "actionKind": null,
+      "definition": "Root classifier for all MIM actions.",
+      "packagePath": "Classifiers::Action"
+    },
+    {
+      "name": "Metadata",
+      "semanticId": "00000003-0003-4003-8003-000000000003",
+      "parent": null,
+      "objectKind": null,
+      "actionKind": null,
+      "definition": "Metadata describing reporter, observer, appraisal, validity, and security.",
+      "packagePath": "Classifiers::Metadata"
+    },
+    {
+      "name": "Location",
+      "semanticId": "00000010-0010-4010-8010-000000000010",
+      "parent": "Object",
+      "objectKind": "location",
+      "actionKind": null,
+      "definition": "Geospatial or symbolic location.",
+      "packagePath": "Classifiers::Object::Location"
+    },
+    {
+      "name": "Line",
+      "semanticId": "00000011-0011-4011-8011-000000000011",
+      "parent": "Location",
+      "objectKind": "location",
+      "actionKind": null,
+      "definition": "Linear geographic feature or boundary.",
+      "packagePath": "Classifiers::Object::Location::Line"
+    },
+    {
+      "name": "Organisation",
+      "semanticId": "00000020-0020-4020-8020-000000000020",
+      "parent": "Object",
+      "objectKind": "organisation",
+      "actionKind": null,
+      "definition": "Organised group of persons with a common purpose.",
+      "packagePath": "Classifiers::Object::Organisation"
+    },
+    {
+      "name": "MilitaryOrganisation",
+      "semanticId": "00000021-0021-4021-8021-000000000021",
+      "parent": "Organisation",
+      "objectKind": "organisation",
+      "actionKind": null,
+      "definition": "Organisation with military function.",
+      "packagePath": "Classifiers::Object::Organisation::MilitaryOrganisation"
+    },
+    {
+      "name": "Unit",
+      "semanticId": "00000022-0022-4022-8022-000000000022",
+      "parent": "MilitaryOrganisation",
+      "objectKind": "organisation",
+      "actionKind": null,
+      "definition": "Military unit identified by function and echelon.",
+      "packagePath": "Classifiers::Object::Organisation::MilitaryOrganisation::Unit"
+    },
+    {
+      "name": "CombatUnit",
+      "semanticId": "00000023-0023-4023-8023-000000000023",
+      "parent": "Unit",
+      "objectKind": "organisation",
+      "actionKind": null,
+      "definition": "Unit whose primary role is combat operations.",
+      "packagePath": "Classifiers::Object::Organisation::MilitaryOrganisation::Unit::CombatUnit"
+    },
+    {
+      "name": "InfantryUnit",
+      "semanticId": "00000024-0024-4024-8024-000000000024",
+      "parent": "CombatUnit",
+      "objectKind": "organisation",
+      "actionKind": null,
+      "definition": "Combat unit specialising in infantry operations.",
+      "packagePath": "Classifiers::Object::Organisation::MilitaryOrganisation::Unit::CombatUnit::InfantryUnit"
+    },
+    {
+      "name": "Facility",
+      "semanticId": "00000030-0030-4030-8030-000000000030",
+      "parent": "Object",
+      "objectKind": "facility",
+      "actionKind": null,
+      "definition": "Man-made construction or installation.",
+      "packagePath": "Classifiers::Object::Facility"
+    },
+    {
+      "name": "Feature",
+      "semanticId": "00000040-0040-4040-8040-000000000040",
+      "parent": "Object",
+      "objectKind": "feature",
+      "actionKind": null,
+      "definition": "Natural or artificial geographic feature.",
+      "packagePath": "Classifiers::Object::Feature"
+    },
+    {
+      "name": "Materiel",
+      "semanticId": "00000050-0050-4050-8050-000000000050",
+      "parent": "Object",
+      "objectKind": "materiel",
+      "actionKind": null,
+      "definition": "Equipment, supplies, or material items.",
+      "packagePath": "Classifiers::Object::Materiel"
+    },
+    {
+      "name": "MilitaryConvoy",
+      "semanticId": "00000051-0051-4051-8051-000000000051",
+      "parent": "Materiel",
+      "objectKind": "materiel",
+      "actionKind": null,
+      "definition": "Group of vehicles moving together under military control.",
+      "packagePath": "Classifiers::Object::Materiel::MilitaryConvoy"
+    },
+    {
+      "name": "Person",
+      "semanticId": "00000060-0060-4060-8060-000000000060",
+      "parent": "Object",
+      "objectKind": "person",
+      "actionKind": null,
+      "definition": "Human individual.",
+      "packagePath": "Classifiers::Object::Person"
+    },
+    {
+      "name": "Capability",
+      "semanticId": "00000070-0070-4070-8070-000000000070",
+      "parent": "Object",
+      "objectKind": "capability",
+      "actionKind": null,
+      "definition": "Ability to perform a function or activity.",
+      "packagePath": "Classifiers::Object::Capability"
+    },
+    {
+      "name": "Task",
+      "semanticId": "00000100-0100-4100-8100-000000000100",
+      "parent": "Action",
+      "objectKind": null,
+      "actionKind": "task",
+      "definition": "Action assigning work to be performed.",
+      "packagePath": "Classifiers::Action::Task"
+    },
+    {
+      "name": "ActionEffect",
+      "semanticId": "00000101-0101-4101-8101-000000000101",
+      "parent": "Action",
+      "objectKind": null,
+      "actionKind": "actionEffect",
+      "definition": "Effect resulting from an action.",
+      "packagePath": "Classifiers::Action::ActionEffect"
+    },
+    {
+      "name": "Establishment",
+      "semanticId": "00000102-0102-4102-8102-000000000102",
+      "parent": "Action",
+      "objectKind": null,
+      "actionKind": "establishment",
+      "definition": "Action establishing an organisation or structure.",
+      "packagePath": "Classifiers::Action::Establishment"
+    }
+  ],
+  "elements": [
+    {
+      "name": "Object",
+      "kind": "class",
+      "semanticId": "00000001-0001-4001-8001-000000000001",
+      "uri": "https://www.mimworld.org/mim/5.1.0/Classifiers/Object",
+      "packagePath": "Classifiers::Object",
+      "definition": "Root classifier for all MIM objects.",
+      "parentClass": null,
+      "representationTerm": null,
+      "representationMetadata": null,
+      "multiplicityLower": 0,
+      "multiplicityUpper": "*",
+      "isMandatory": false,
+      "isNillable": true
+    },
+    {
+      "name": "MilitaryConvoy",
+      "kind": "class",
+      "semanticId": "00000051-0051-4051-8051-000000000051",
+      "uri": "https://www.mimworld.org/mim/5.1.0/Classifiers/Object/Materiel/MilitaryConvoy",
+      "packagePath": "Classifiers::Object::Materiel::MilitaryConvoy",
+      "definition": "Group of vehicles moving together under military control.",
+      "parentClass": "Materiel",
+      "representationTerm": null,
+      "representationMetadata": null,
+      "multiplicityLower": 0,
+      "multiplicityUpper": "1",
+      "isMandatory": false,
+      "isNillable": true
+    },
+    {
+      "name": "daySpeed",
+      "kind": "attribute",
+      "semanticId": "00000052-0052-4052-8052-000000000052",
+      "uri": "https://www.mimworld.org/mim/5.1.0/Classifiers/Object/Materiel/MilitaryConvoy/daySpeed",
+      "packagePath": "Classifiers::Object::Materiel::MilitaryConvoy",
+      "definition": "Convoy speed during daylight.",
+      "parentClass": "MilitaryConvoy",
+      "representationTerm": "speed",
+      "representationMetadata": {
+        "unitOfMeasure": "km/h"
+      },
+      "multiplicityLower": 0,
+      "multiplicityUpper": "1",
+      "isMandatory": false,
+      "isNillable": true
+    },
+    {
+      "name": "nightSpeed",
+      "kind": "attribute",
+      "semanticId": "00000053-0053-4053-8053-000000000053",
+      "uri": "https://www.mimworld.org/mim/5.1.0/Classifiers/Object/Materiel/MilitaryConvoy/nightSpeed",
+      "packagePath": "Classifiers::Object::Materiel::MilitaryConvoy",
+      "definition": "Convoy speed during night.",
+      "parentClass": "MilitaryConvoy",
+      "representationTerm": "speed",
+      "representationMetadata": {
+        "unitOfMeasure": "km/h"
+      },
+      "multiplicityLower": 0,
+      "multiplicityUpper": "1",
+      "isMandatory": false,
+      "isNillable": true
+    },
+    {
+      "name": "haltDuration",
+      "kind": "attribute",
+      "semanticId": "00000054-0054-4054-8054-000000000054",
+      "uri": "https://www.mimworld.org/mim/5.1.0/Classifiers/Object/Materiel/MilitaryConvoy/haltDuration",
+      "packagePath": "Classifiers::Object::Materiel::MilitaryConvoy",
+      "definition": "Duration of planned halt.",
+      "parentClass": "MilitaryConvoy",
+      "representationTerm": "duration",
+      "representationMetadata": null,
+      "multiplicityLower": 0,
+      "multiplicityUpper": "1",
+      "isMandatory": false,
+      "isNillable": true
+    },
+    {
+      "name": "Unit",
+      "kind": "class",
+      "semanticId": "00000022-0022-4022-8022-000000000022",
+      "uri": "https://www.mimworld.org/mim/5.1.0/Classifiers/Object/Organisation/MilitaryOrganisation/Unit",
+      "packagePath": "Classifiers::Object::Organisation::MilitaryOrganisation::Unit",
+      "definition": "Military unit.",
+      "parentClass": "MilitaryOrganisation",
+      "representationTerm": null,
+      "representationMetadata": null,
+      "multiplicityLower": 0,
+      "multiplicityUpper": "1",
+      "isMandatory": false,
+      "isNillable": true
+    },
+    {
+      "name": "unitRangeCode",
+      "kind": "attribute",
+      "semanticId": "00000025-0025-4025-8025-000000000025",
+      "uri": "https://www.mimworld.org/mim/5.1.0/Classifiers/Object/Organisation/MilitaryOrganisation/Unit/unitRangeCode",
+      "packagePath": "Classifiers::Object::Organisation::MilitaryOrganisation::Unit",
+      "definition": "Maximum distance at which a unit can operate under normal conditions.",
+      "parentClass": "Unit",
+      "representationTerm": "code",
+      "representationMetadata": null,
+      "multiplicityLower": 0,
+      "multiplicityUpper": "1",
+      "isMandatory": false,
+      "isNillable": true
+    },
+    {
+      "name": "Task",
+      "kind": "class",
+      "semanticId": "00000100-0100-4100-8100-000000000100",
+      "uri": "https://www.mimworld.org/mim/5.1.0/Classifiers/Action/Task",
+      "packagePath": "Classifiers::Action::Task",
+      "definition": "Action assigning work to be performed.",
+      "parentClass": "Action",
+      "representationTerm": null,
+      "representationMetadata": null,
+      "multiplicityLower": 0,
+      "multiplicityUpper": "*",
+      "isMandatory": false,
+      "isNillable": true
+    }
+  ],
+  "codeLists": [
+    {
+      "name": "UnitRangeCode",
+      "semanticId": "080de7fa-fc13-4201-8364-0aa47e5c10bc",
+      "complete": true,
+      "managed": false,
+      "ordered": true,
+      "definition": "The indication of the maximum distance at which a Unit can operate under normal conditions.",
+      "values": [
+        {
+          "name": "CloseRange",
+          "semanticId": "10000001-0001-4001-8001-000000000001",
+          "definition": null,
+          "order": 1,
+          "lowerThan": ["ShortRange"]
+        },
+        {
+          "name": "ShortRange",
+          "semanticId": "10000002-0002-4002-8002-000000000002",
+          "definition": null,
+          "order": 2,
+          "lowerThan": ["MediumRange"]
+        },
+        {
+          "name": "MediumRange",
+          "semanticId": "10000003-0003-4003-8003-000000000003",
+          "definition": null,
+          "order": 3,
+          "lowerThan": ["LongRange"]
+        },
+        {
+          "name": "LongRange",
+          "semanticId": "10000004-0004-4004-8004-000000000004",
+          "definition": null,
+          "order": 4,
+          "lowerThan": []
+        }
+      ]
+    }
+  ]
+}
