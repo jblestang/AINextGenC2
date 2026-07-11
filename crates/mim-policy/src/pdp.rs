@@ -80,6 +80,18 @@ impl PolicyDecisionPoint {
     fn evaluate_access(&self, context: &PolicyContext) -> PolicyResult<PolicyDecision> {
         let domain = self.require_domain(&context.environment.source_domain)?;
 
+        if let Some(deny) = self.check_handling_caveats(&context.subject, &context.resource) {
+            return Ok(deny);
+        }
+
+        if let Some(deny) = self.check_mission_compartment(
+            resolve_mission_id(&context.subject, &context.environment),
+            domain,
+            None,
+        ) {
+            return Ok(deny);
+        }
+
         if context.subject.clearance < context.resource.classification {
             return Ok(PolicyDecision::deny(format!(
                 "subject clearance {} insufficient for resource classification {}",
@@ -151,7 +163,17 @@ impl PolicyDecisionPoint {
             ))
         })?;
 
+        let source = self.require_domain(&context.environment.source_domain)?;
         let target = self.require_domain(target_id)?;
+
+        if let Some(deny) = self.check_handling_caveats(&context.subject, &context.resource) {
+            return Ok(deny);
+        }
+
+        let mission_id = resolve_mission_id(&context.subject, &context.environment);
+        if let Some(deny) = self.check_mission_compartment(mission_id, source, Some(target)) {
+            return Ok(deny);
+        }
 
         for country in &context.resource.releasable_countries {
             if !target.accepts_country(country) {
@@ -203,6 +225,72 @@ impl PolicyDecisionPoint {
             .domain(id)
             .ok_or_else(|| PolicyError::NotFound(format!("domain '{}' not registered", id.0)))
     }
+
+    fn check_handling_caveats(
+        &self,
+        subject: &crate::context::SubjectAttributes,
+        resource: &crate::context::ResourceAttributes,
+    ) -> Option<PolicyDecision> {
+        for caveat in &resource.handling_caveats {
+            if !subject.holds_caveat(caveat) {
+                return Some(PolicyDecision::deny(format!(
+                    "subject {} lacks required handling caveat {caveat}",
+                    subject.subject_id
+                )));
+            }
+        }
+        None
+    }
+
+    fn check_mission_compartment(
+        &self,
+        mission_id: Option<&str>,
+        source: &SecurityDomain,
+        target: Option<&SecurityDomain>,
+    ) -> Option<PolicyDecision> {
+        let requires_mission = !source.mission_compartments.is_empty()
+            || target
+                .map(|domain| !domain.mission_compartments.is_empty())
+                .unwrap_or(false);
+
+        if !requires_mission {
+            return None;
+        }
+
+        let Some(mission_id) = mission_id else {
+            return Some(PolicyDecision::deny(
+                "mission compartment required for compartmented domain transfer",
+            ));
+        };
+
+        if !source.accepts_mission(mission_id) {
+            return Some(PolicyDecision::deny(format!(
+                "mission {mission_id} not authorized in source domain {}",
+                source.id.0
+            )));
+        }
+
+        if let Some(target) = target {
+            if !target.accepts_mission(mission_id) {
+                return Some(PolicyDecision::deny(format!(
+                    "mission {mission_id} not authorized in target domain {}",
+                    target.id.0
+                )));
+            }
+        }
+
+        None
+    }
+}
+
+fn resolve_mission_id<'a>(
+    subject: &'a crate::context::SubjectAttributes,
+    environment: &'a crate::context::EnvironmentAttributes,
+) -> Option<&'a str> {
+    environment
+        .mission_id
+        .as_deref()
+        .or(subject.mission_id.as_deref())
 }
 
 fn operation_name(operation: AccessOperation) -> &'static str {
@@ -222,7 +310,7 @@ mod tests {
     use crate::context::{
         EnvironmentAttributes, ResourceAttributes, SubjectAttributes,
     };
-    use crate::pip::PolicyInformationPoint;
+    use crate::store::PolicyStore;
 
     use super::*;
 
@@ -260,7 +348,7 @@ mod tests {
     #[test]
     fn denies_insufficient_clearance_on_read() {
         let pdp = PolicyDecisionPoint::from_preset_high_to_low();
-        let pip = PolicyInformationPoint::new();
+        let pip = crate::pip::PolicyInformationPoint::new();
         let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
         let domain = pdp
             .store()
@@ -277,5 +365,72 @@ mod tests {
             .expect("ctx");
         let decision = pdp.evaluate(&ctx).expect("decision");
         assert_eq!(decision.effect, PolicyEffect::Deny);
+    }
+
+    #[test]
+    fn denies_missing_handling_caveat() {
+        let pdp = PolicyDecisionPoint::from_preset_high_to_low();
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret)
+            .with_category(CategoryMarking::releasable_to(vec!["USA".into()]))
+            .with_category(CategoryMarking::handling_caveat("LOCSEN"));
+        let decision = pdp
+            .evaluate(&cross_domain_context(label))
+            .expect("decision");
+        assert_eq!(decision.effect, PolicyEffect::Deny);
+        assert!(decision.reason.contains("LOCSEN"));
+    }
+
+    #[test]
+    fn permits_matching_handling_caveat() {
+        let pdp = PolicyDecisionPoint::from_preset_high_to_low();
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Restricted)
+            .with_category(CategoryMarking::releasable_to(vec!["USA".into()]))
+            .with_category(CategoryMarking::handling_caveat("LOCSEN"));
+        let mut ctx = cross_domain_context(label);
+        ctx.subject = SubjectAttributes::new("guard", ClassificationLevel::Secret)
+            .with_handling_caveat("LOCSEN");
+        let decision = pdp.evaluate(&ctx).expect("decision");
+        assert_eq!(decision.effect, PolicyEffect::Permit);
+    }
+
+    #[test]
+    fn denies_missing_mission_compartment() {
+        let mut store = PolicyStore::preset_high_to_low();
+        let source = store
+            .domain(&DomainId::new("DOMAIN-HIGH"))
+            .expect("source")
+            .clone()
+            .with_mission_compartments(vec!["SAR-OPS-1".into()]);
+        store.insert_domain(source).expect("insert");
+        let pdp = PolicyDecisionPoint::new(store);
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Restricted)
+            .with_category(CategoryMarking::releasable_to(vec!["USA".into()]));
+        let decision = pdp.evaluate(&cross_domain_context(label)).expect("decision");
+        assert_eq!(decision.effect, PolicyEffect::Deny);
+        assert!(decision.reason.contains("mission compartment"));
+    }
+
+    #[test]
+    fn permits_matching_mission_compartment() {
+        let mut store = PolicyStore::preset_high_to_low();
+        let source = store
+            .domain(&DomainId::new("DOMAIN-HIGH"))
+            .expect("source")
+            .clone()
+            .with_mission_compartments(vec!["SAR-OPS-1".into()]);
+        let target = store
+            .domain(&DomainId::new("DOMAIN-LOW"))
+            .expect("target")
+            .clone()
+            .with_mission_compartments(vec!["SAR-OPS-1".into()]);
+        store.insert_domain(source).expect("insert source");
+        store.insert_domain(target).expect("insert target");
+        let pdp = PolicyDecisionPoint::new(store);
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Restricted)
+            .with_category(CategoryMarking::releasable_to(vec!["USA".into()]));
+        let mut ctx = cross_domain_context(label);
+        ctx.environment.mission_id = Some("SAR-OPS-1".into());
+        let decision = pdp.evaluate(&ctx).expect("decision");
+        assert_eq!(decision.effect, PolicyEffect::Permit);
     }
 }

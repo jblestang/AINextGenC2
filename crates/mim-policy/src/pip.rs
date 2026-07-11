@@ -47,13 +47,14 @@ impl PolicyInformationPoint {
                 "source and target domains must differ for cross-domain transfer".into(),
             ));
         }
+        let effective_mission = mission_id.or_else(|| subject.mission_id.clone());
         Ok(PolicyContext {
             subject,
             resource: ResourceAttributes::from_label(label),
             environment: EnvironmentAttributes::cross_domain(
                 source.id.clone(),
                 target.id.clone(),
-                mission_id,
+                effective_mission,
             ),
             label: label.clone(),
         })

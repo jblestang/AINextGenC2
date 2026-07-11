@@ -1,5 +1,5 @@
-use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
+use std::fs::{self, OpenOptions};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
@@ -21,7 +21,16 @@ pub type AuditResult<T> = Result<T, AuditError>;
 
 /// Append-only audit log — records cannot be updated or deleted once written.
 pub trait AuditSink: Send + Sync {
-    fn append(&self, record: &AuditRecord) -> AuditResult<()>;
+    fn append_record(&self, record: &AuditRecord) -> AuditResult<()> {
+        let _ = record;
+        Ok(())
+    }
+
+    fn append_envelope(&self, envelope: &AuditEnvelope) -> AuditResult<()> {
+        let _ = envelope;
+        Ok(())
+    }
+
     fn len(&self) -> usize;
 }
 
@@ -45,7 +54,7 @@ impl MemoryAuditSink {
 }
 
 impl AuditSink for MemoryAuditSink {
-    fn append(&self, record: &AuditRecord) -> AuditResult<()> {
+    fn append_record(&self, record: &AuditRecord) -> AuditResult<()> {
         let mut guard = self
             .records
             .lock()
@@ -59,7 +68,7 @@ impl AuditSink for MemoryAuditSink {
     }
 }
 
-/// File-backed append-only audit log (JSON lines).
+/// File-backed append-only audit log (tamper-evident envelope JSON lines).
 #[derive(Clone, Debug)]
 pub struct FileAuditSink {
     path: std::path::PathBuf,
@@ -70,8 +79,7 @@ impl FileAuditSink {
     pub fn open(path: impl AsRef<Path>) -> AuditResult<Self> {
         let path = path.as_ref().to_path_buf();
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| AuditError::Io(e.to_string()))?;
+            fs::create_dir_all(parent).map_err(|e| AuditError::Io(e.to_string()))?;
         }
         OpenOptions::new()
             .create(true)
@@ -83,17 +91,23 @@ impl FileAuditSink {
             count: Arc::new(Mutex::new(0)),
         })
     }
+
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
 }
 
 impl AuditSink for FileAuditSink {
-    fn append(&self, record: &AuditRecord) -> AuditResult<()> {
+    fn append_envelope(&self, envelope: &AuditEnvelope) -> AuditResult<()> {
         let file = OpenOptions::new()
             .create(true)
             .append(true)
             .open(&self.path)
             .map_err(|e| AuditError::Io(e.to_string()))?;
         let mut writer = BufWriter::new(file);
-        let line = serde_json::to_string(record).map_err(|e| AuditError::Io(e.to_string()))?;
+        let line = envelope
+            .to_json_line()
+            .map_err(|e| AuditError::Io(e))?;
         writeln!(writer, "{line}").map_err(|e| AuditError::Io(e.to_string()))?;
         writer.flush().map_err(|e| AuditError::Io(e.to_string()))?;
         if let Ok(mut count) = self.count.lock() {
@@ -139,6 +153,41 @@ impl AuditLog {
         Self::new(MemoryAuditSink::new())
     }
 
+    pub fn file(path: impl AsRef<Path>) -> AuditResult<Self> {
+        Ok(Self::new(FileAuditSink::open(path)?))
+    }
+
+    /// Reload a hash-chained audit log from envelope JSON lines on disk.
+    pub fn load_from_file(path: impl AsRef<Path>) -> AuditResult<Self> {
+        let path = path.as_ref();
+        let sink = FileAuditSink::open(path)?;
+        let file = fs::File::open(path).map_err(|e| AuditError::Io(e.to_string()))?;
+        let reader = BufReader::new(file);
+        let mut envelopes = Vec::new();
+        for line in reader.lines() {
+            let line = line.map_err(|e| AuditError::Io(e.to_string()))?;
+            if line.trim().is_empty() {
+                continue;
+            }
+            let envelope = AuditEnvelope::from_json_line(&line)
+                .map_err(|e| AuditError::Io(e))?;
+            envelopes.push(envelope);
+        }
+        let previous_hash = envelopes
+            .last()
+            .map(|env| env.record_hash.clone())
+            .unwrap_or_else(|| "GENESIS".to_owned());
+        Ok(Self {
+            sink: Arc::new(sink),
+            chain: Arc::new(Mutex::new(ChainState {
+                previous_hash,
+                envelopes,
+                signing_key: None,
+                verifying_key: None,
+            })),
+        })
+    }
+
     /// Enable NMBS-signed, hash-chained audit envelopes on every record.
     pub fn with_signing_key(self, signing_key: SigningKey) -> Self {
         if let Ok(mut chain) = self.chain.lock() {
@@ -157,12 +206,13 @@ impl AuditLog {
     }
 
     pub fn record(&self, record: AuditRecord) -> AuditResult<()> {
-        self.sink.append(&record)?;
+        self.sink.append_record(&record)?;
         if let Ok(mut chain) = self.chain.lock() {
             let mut envelope = AuditEnvelope::seal(record, &chain.previous_hash);
             if let Some(key) = &chain.signing_key {
                 envelope = envelope.sign(key).map_err(|e| AuditError::Io(e))?;
             }
+            self.sink.append_envelope(&envelope)?;
             chain.previous_hash = envelope.record_hash.clone();
             chain.envelopes.push(envelope);
         }
@@ -170,7 +220,10 @@ impl AuditLog {
     }
 
     pub fn len(&self) -> usize {
-        self.sink.len()
+        self.chain
+            .lock()
+            .map(|chain| chain.envelopes.len())
+            .unwrap_or(0)
     }
 
     pub fn envelopes(&self) -> Vec<AuditEnvelope> {
@@ -221,5 +274,29 @@ mod tests {
         ))
         .expect("append");
         assert_eq!(sink.records().len(), 1);
+    }
+
+    #[test]
+    fn file_sink_persists_envelopes_and_reloads() {
+        let path = std::env::temp_dir().join(format!(
+            "mim-audit-envelope-{}.jsonl",
+            uuid::Uuid::new_v4()
+        ));
+        let log = AuditLog::file(&path).expect("open");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        log.record(AuditRecord::new(
+            AuditEventKind::CrossDomainTransfer,
+            "guard",
+            label,
+            "rule",
+            "allow",
+            "released",
+        ))
+        .expect("record");
+        assert_eq!(log.len(), 1);
+        let reloaded = AuditLog::load_from_file(&path).expect("reload");
+        assert_eq!(reloaded.len(), 1);
+        reloaded.verify_chain().expect("chain");
+        let _ = fs::remove_file(path);
     }
 }

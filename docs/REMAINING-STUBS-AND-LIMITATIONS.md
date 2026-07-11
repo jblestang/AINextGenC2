@@ -22,7 +22,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | Crypto / PKI | Conformance keys; FIPS build verified | PKI loaders exist; not default | RSA outside FIPS module |
 | MIM manifest (OWL import) | **932/932 properties (100%)** | JC3IEDM v3.0 bundled | No authoritative MIM 5.1 OWL |
 | Policy plane (CMBAC) | Clearance + releasability subset | Partial | Not ready |
-| Audit | In-memory / file JSONL | Partial | WORM / HSM not implemented |
+| Audit | Durable envelope JSONL + SIEM export | Partial | WORM / accredited SIEM not implemented |
 | Scenarios | 5 synthetic demos | Demo only | No live C2 integration |
 
 ---
@@ -148,8 +148,8 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ### 6.2 Partial CMBAC — not full NATO XACML profile
 
-- **Implemented:** Classification vs clearance; nationality vs releasability; domain ceilings; downgrade with category intersection.
-- **Limitation:** No structured NATO clearance XML; no permissive/restrictive category matrix per SPIF; `mission_id` in `EnvironmentAttributes` is **not evaluated** by PDP; handling caveats on labels are **not enforced** at PDP.
+- **Implemented:** Classification vs clearance; nationality vs releasability; domain ceilings; downgrade with category intersection; **handling-caveat enforcement**; **`mission_id` / domain `mission_compartments`**.
+- **Limitation:** No structured NATO clearance XML; no permissive/restrictive category matrix per SPIF beyond handling caveats.
 
 ### 6.3 No XACML obligations / combining algorithms
 
@@ -187,13 +187,15 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ## 8. Audit
 
-### 8.1 Demos use in-memory audit log
+### 8.1 Durable envelope audit (implemented)
 
-- **Limitation:** Not durable unless `FileAuditSink` is wired.
+- **Implemented:** `FileAuditSink` writes tamper-evident `AuditEnvelope` JSONL; `AuditLog::load_from_file()`; DCS config `[audit]` paths; scenario exports SIEM JSON.
+- **Limitation:** Demos without config still fall back to in-memory audit.
 
-### 8.2 File sink is append-only JSONL — not WORM
+### 8.2 SIEM forwarding (partial)
 
-- **Limitation:** No write-once media or SIEM auto-forwarding.
+- **Implemented:** `forward_siem_to_file()`, `forward_log_http()` (stdlib HTTP POST).
+- **Limitation:** No syslog connector; HTTP forward is best-effort without retry/auth; not WORM.
 
 ---
 
@@ -232,7 +234,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ## 11. Suggested remediation priority
 
-1. **Mission-aware PDP** + national/coalition compartment scenario (SAR, LOC, dual-broker)
+1. **National/coalition compartment scenario** (SAR, LOC, dual-broker)
 2. **Production PKI** wired into DCS scenario and HTTP server defaults (feature-flag conformance)
 3. **Live HTTPS E2E** in CI
 4. **MIP4-IES JSON-LD wire profile** and NATO accreditation test vectors

@@ -139,6 +139,24 @@ impl ConfidentialityLabel {
             .collect()
     }
 
+    /// STANAG 4774 handling caveat values (restrictive "Handling" category).
+    pub fn handling_caveats(&self) -> Vec<String> {
+        self.categories
+            .iter()
+            .filter(|c| c.tag_name.eq_ignore_ascii_case("Handling"))
+            .flat_map(|c| c.values.clone())
+            .collect()
+    }
+
+    /// All values from restrictive category markings (Handling and other restrictive tags).
+    pub fn restrictive_category_values(&self) -> Vec<String> {
+        self.categories
+            .iter()
+            .filter(|c| c.category_type == CategoryType::Restrictive)
+            .flat_map(|c| c.values.clone())
+            .collect()
+    }
+
     pub fn from_mim_security(security: &SecurityClassification) -> LabelResult<Self> {
         let policy_id = security
             .policy

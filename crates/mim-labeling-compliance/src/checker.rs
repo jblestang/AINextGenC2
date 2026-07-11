@@ -174,24 +174,35 @@ impl LabelingComplianceChecker {
             kas_signing_key: keys.signing_key().clone(),
             kas_verifying_key: keys.verifying_key().clone(),
         };
-        let audit = AuditLog::memory();
+        let audit = AuditLog::memory().with_signing_key(keys.signing_key().clone());
         let allow_ok = transfer
             .execute(&guard, &audit)
             .map(|o| matches!(o, mim_dcs::TransferOutcome::Released { .. }))
             .unwrap_or(false);
+        let audit_ok = audit.len() >= 2 && audit.verify_chain().is_ok();
         let deny_label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret)
             .with_category(CategoryMarking::releasable_to(vec!["DEU".into()]));
         let deny_ok = guard
             .evaluate(&deny_label)
             .map(|r| r.decision == GuardDecision::Deny)
             .unwrap_or(false);
-        let score = if allow_ok && deny_ok { 1.0 } else if allow_ok || deny_ok { 0.5 } else { 0.0 };
+        let score = if allow_ok && deny_ok && audit_ok {
+            1.0
+        } else if allow_ok && deny_ok {
+            0.75
+        } else if allow_ok || deny_ok {
+            0.5
+        } else {
+            0.0
+        };
         LabelingDimensionResult {
             dimension: LabelingDimension::DcsCrossDomain,
             status: status_from_score(score, self.requirements.require_dcs),
             score,
             message: if score >= 1.0 {
                 "DCS guard with mandatory NMBS binding and audit verified".into()
+            } else if allow_ok && deny_ok {
+                "DCS transfer succeeded but audit trail incomplete".into()
             } else {
                 "DCS cross-domain evaluation incomplete".into()
             },
@@ -233,6 +244,28 @@ impl LabelingComplianceChecker {
             )
             .map(|decision| decision.effect != mim_policy::PolicyEffect::Deny)
             .unwrap_or(false);
+        let caveat_label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Restricted)
+            .with_category(CategoryMarking::releasable_to(vec!["USA".into()]))
+            .with_category(CategoryMarking::handling_caveat("LOCSEN"));
+        let caveat_denied = pep
+            .evaluate_cross_domain(
+                SubjectAttributes::new("guard", ClassificationLevel::Secret),
+                &caveat_label,
+                &source,
+                &target,
+            )
+            .map(|decision| decision.effect == mim_policy::PolicyEffect::Deny)
+            .unwrap_or(false);
+        let caveat_permitted = pep
+            .evaluate_cross_domain(
+                SubjectAttributes::new("guard", ClassificationLevel::Secret)
+                    .with_handling_caveat("LOCSEN"),
+                &caveat_label,
+                &source,
+                &target,
+            )
+            .map(|decision| decision.effect == mim_policy::PolicyEffect::Permit)
+            .unwrap_or(false);
         let pep_ok = pep
             .enforce_access(
                 SubjectAttributes::new("operator", ClassificationLevel::Secret),
@@ -241,11 +274,12 @@ impl LabelingComplianceChecker {
                 &source,
             )
             .is_ok();
-        let score = [pip_ok, pdp_ok, pep_ok, pap_ok]
+        let policy_checks = [pip_ok, pdp_ok, pep_ok, pap_ok, caveat_denied, caveat_permitted];
+        let score = policy_checks
             .iter()
             .filter(|ok| **ok)
             .count() as f64
-            / 4.0;
+            / policy_checks.len() as f64;
         LabelingDimensionResult {
             dimension: LabelingDimension::PolicyPlane,
             status: status_from_score(score, self.requirements.require_policy_plane),
@@ -360,11 +394,26 @@ impl LabelingComplianceChecker {
             "evaluate",
             "audit trail smoke test",
         );
-        let ok = audit.record(record).is_ok()
+        let ok = audit.record(record.clone()).is_ok()
             && audit.len() == 1
             && audit.envelopes().len() == 1
             && audit.verify_chain().is_ok()
             && audit.export_siem().is_ok();
+        let file_path = std::env::temp_dir().join(format!(
+            "labeling-audit-{}.jsonl",
+            uuid::Uuid::new_v4()
+        ));
+        let file_audit = AuditLog::file(&file_path)
+            .expect("file audit")
+            .with_signing_key(keys.signing_key().clone());
+        let file_ok = file_audit.record(record).is_ok()
+            && file_audit.len() == 1
+            && AuditLog::load_from_file(&file_path)
+                .expect("reload")
+                .verify_chain()
+                .is_ok();
+        let _ = std::fs::remove_file(file_path);
+        let ok = ok && file_ok;
         LabelingDimensionResult {
             dimension: LabelingDimension::AuditTrail,
             status: status_from_score(if ok { 1.0 } else { 0.0 }, self.requirements.require_audit),

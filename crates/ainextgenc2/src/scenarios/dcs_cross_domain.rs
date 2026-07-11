@@ -1,6 +1,6 @@
 //! Cross-domain DCS scenario: labeled MIM radar exchange across security domains.
 
-use mim_audit::AuditLog;
+use mim_audit::{forward_siem_to_file, AuditLog};
 use mim_crypto::conformance_keypair;
 use mim_dcs::{
     bundled_config_path, CrossDomainGuard, CrossDomainTransfer, DcsConfig, GuardDecision,
@@ -28,6 +28,9 @@ pub struct DcsScenarioOutput {
     pub ztdf_manifest: Option<String>,
     pub labeling_compliant: bool,
     pub mim_json: String,
+    pub audit_record_count: usize,
+    pub audit_chain_verified: bool,
+    pub siem_export_path: Option<String>,
 }
 
 /// DCS cross-domain scenario wrapping the air defense radar exchange.
@@ -58,7 +61,13 @@ impl DcsCrossDomainScenario {
         Self::default()
     }
 
+    fn config(&self) -> DcsConfig {
+        DcsConfig::load_path(bundled_config_path("dcs-coalition.toml"))
+            .unwrap_or_else(|_| DcsConfig::conformance_high_to_low())
+    }
+
     pub fn run(&self, stack: &MimStack) -> mim_core::MimResult<DcsScenarioOutput> {
+        let config = self.config();
         let keys = conformance_keypair().map_err(|e| mim_core::MimError::Validation(e.to_string()))?;
         let registry = stack.registry();
         let radar_store = AirDefenseRadarScenario::demo().build_store(registry)?;
@@ -92,9 +101,18 @@ impl DcsCrossDomainScenario {
             kas_verifying_key: keys.verifying_key().clone(),
         };
 
-        let audit = AuditLog::memory();
-        let guard_result = transfer.guard_result(&self.guard)?;
-        let outcome = transfer.execute(&self.guard, &audit)?;
+        let audit = config
+            .build_audit_log()
+            .map_err(|e| mim_core::MimError::Validation(e))?
+            .unwrap_or_else(|| AuditLog::memory())
+            .with_signing_key(keys.signing_key().clone());
+        let guard = self
+            .guard
+            .clone()
+            .with_audit(audit.clone());
+
+        let guard_result = transfer.guard_result(&guard)?;
+        let outcome = transfer.execute(&guard, &audit)?;
 
         let (label_xml, ztdf_manifest) = match &outcome {
             TransferOutcome::Released {
@@ -106,6 +124,11 @@ impl DcsCrossDomainScenario {
         };
 
         let labeling_report = LabelingComplianceChecker::with_defaults().evaluate();
+        let audit_chain_verified = audit.verify_chain().is_ok();
+        let siem_export_path = config.resolved_siem_export_path().map(|resolved| {
+            let _ = forward_siem_to_file(&audit, &resolved);
+            resolved.display().to_string()
+        });
 
         Ok(DcsScenarioOutput {
             source_label: format!(
@@ -123,6 +146,9 @@ impl DcsCrossDomainScenario {
             ztdf_manifest,
             labeling_compliant: labeling_report.is_fully_compliant,
             mim_json: labeled.mim_json,
+            audit_record_count: audit.len(),
+            audit_chain_verified,
+            siem_export_path,
         })
     }
 }
@@ -140,5 +166,7 @@ mod tests {
         assert!(output.labeling_compliant);
         assert!(output.label_xml.is_some());
         assert!(output.ztdf_manifest.is_some());
+        assert!(output.audit_record_count >= 2);
+        assert!(output.audit_chain_verified);
     }
 }
