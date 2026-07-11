@@ -1,0 +1,19 @@
+//! Immutable audit trail for DCS guard and policy enforcement decisions.
+
+#![forbid(unsafe_code)]
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+#![deny(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::unreachable,
+    clippy::indexing_slicing,
+    clippy::todo,
+    clippy::unimplemented
+)]
+
+mod log;
+mod record;
+
+pub use log::{AuditLog, AuditSink, FileAuditSink, MemoryAuditSink};
+pub use record::{AuditEventKind, AuditRecord};

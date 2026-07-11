@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spif xmlns="urn:iso:std:iso:29008:2011:confidentialitymetadatalabel">
+  <versioninfo>
+    <spifversion>XML-SPIF</spifversion>
+    <issuingauthority>ACME Corporation</issuingauthority>
+  </versioninfo>
+  <securityPolicyId>
+    <identifier>ACME</identifier>
+  </securityPolicyId>
+  <securityClassifications>
+    <securityClassification><name>PUBLIC</name></securityClassification>
+    <securityClassification><name>INTERNAL</name></securityClassification>
+    <securityClassification><name>CONFIDENTIAL</name></securityClassification>
+  </securityClassifications>
+  <securityCategories>
+    <securityCategory type="restrictive">
+      <name>Sensitive</name>
+      <categoryName>RED</categoryName>
+      <categoryName>AMBER</categoryName>
+      <categoryName>GREEN</categoryName>
+    </securityCategory>
+    <securityCategory type="permissive">
+      <name>Releasable To</name>
+      <categoryName>MOCK</categoryName>
+      <categoryName>PHONY</categoryName>
+      <categoryName>ACME</categoryName>
+    </securityCategory>
+  </securityCategories>
+  <validations>
+    <validation>
+      <classification>CONFIDENTIAL</classification>
+      <categoryName>Releasable To</categoryName>
+      <requiredValue>MOCK</requiredValue>
+      <requiredValue>PHONY</requiredValue>
+    </validation>
+  </validations>
+</spif>

@@ -1,0 +1,29 @@
+[package]
+name = "mim-crypto"
+description = "Cryptographic provider abstraction for NATO STANAG 4778 NMBS and ZTDF (FIPS-capable)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[features]
+default = ["ring-backend"]
+ring-backend = ["dep:ring"]
+fips = ["dep:aws-lc-rs"]
+
+[dependencies]
+base64 = { workspace = true }
+thiserror = { workspace = true }
+rand = "0.8"
+rsa = "0.8"
+sha2 = { workspace = true }
+zeroize = "=1.7.0"
+base64ct = "=1.6.0"
+der = "=0.6.1"
+spki = "=0.6.0"
+pkcs8 = "=0.9.0"
+pkcs1 = "=0.4.1"
+signature = "2.2"
+ring = { version = "0.17", optional = true }
+aws-lc-rs = { version = "1.12", optional = true, default-features = false, features = ["ring-sig-verify"] }

@@ -77,4 +77,27 @@ impl LabelPolicy {
     pub fn public_day_zero() -> Self {
         NatoPolicy::public_policy()
     }
+
+    pub fn capco_us() -> Self {
+        LabelPolicy::new("US")
+            .with_oid("2.16.840.1.101.2.3.48.2.1")
+            .with_allowed_classifications(vec![
+                ClassificationLevel::Unclassified,
+                ClassificationLevel::Confidential,
+                ClassificationLevel::Secret,
+                ClassificationLevel::CosmicTopSecret,
+            ])
+    }
+
+    pub fn uk_demo() -> Self {
+        LabelPolicy::new("DEMO-UK")
+            .with_oid("1.2.826.0.1.6726289.0.2")
+            .with_allowed_classifications(vec![
+                ClassificationLevel::Unclassified,
+                ClassificationLevel::Restricted,
+                ClassificationLevel::Confidential,
+                ClassificationLevel::Secret,
+                ClassificationLevel::CosmicTopSecret,
+            ])
+    }
 }

@@ -16,12 +16,14 @@
 )]
 
 pub mod broker;
+pub mod envelope;
 pub mod error;
 pub mod message;
 pub mod rest;
 pub mod secured;
 
 pub use broker::ExchangeBroker;
+pub use envelope::{envelope_from_json, envelope_to_json, unwrap_put_object, wrap_put_object};
 pub use error::{TransportError, TransportResult};
 pub use message::{
     DeleteObjectRequest, DeleteObjectResponse, ExchangeEnvelope, GetByFilterRequest,

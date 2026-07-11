@@ -12,6 +12,8 @@ mim-core = { workspace = true }
 mim-labeling = { workspace = true }
 mim-stanag4774 = { workspace = true }
 mim-stanag4778 = { workspace = true }
+mim-crypto = { workspace = true }
 base64 = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+zip = { version = "2.2", default-features = false, features = ["deflate"] }

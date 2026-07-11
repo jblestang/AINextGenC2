@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<spif xmlns="urn:iso:std:iso:29008:2011:confidentialitymetadatalabel">
+  <securityPolicyId>
+    <identifier URL="2.16.840.1.101.2.3.48.2.1">US</identifier>
+  </securityPolicyId>
+  <securityClassifications>
+    <securityClassification><name>UNCLASSIFIED</name></securityClassification>
+    <securityClassification><name>CONFIDENTIAL</name></securityClassification>
+    <securityClassification><name>SECRET</name></securityClassification>
+    <securityClassification><name>TOP SECRET</name></securityClassification>
+  </securityClassifications>
+  <securityCategories>
+    <securityCategory type="restrictive">
+      <name>SCI</name>
+      <categoryName>SI</categoryName>
+      <categoryName>TK</categoryName>
+      <categoryName>HCS</categoryName>
+    </securityCategory>
+    <securityCategory type="permissive">
+      <name>Releasable To</name>
+      <categoryName>USA</categoryName>
+      <categoryName>FVEY</categoryName>
+      <categoryName>NATO</categoryName>
+    </securityCategory>
+  </securityCategories>
+  <validations>
+    <validation>
+      <classification>TOP SECRET</classification>
+      <categoryName>SCI</categoryName>
+      <requiredValue>SI</requiredValue>
+      <requiredValue>TK</requiredValue>
+    </validation>
+  </validations>
+</spif>
