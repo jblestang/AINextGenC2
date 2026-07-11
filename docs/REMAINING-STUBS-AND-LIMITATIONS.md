@@ -14,12 +14,12 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 |------|-------------------|-------------------|------------------------|
 | MIM 5.1 compliance | **100% — ready** | Ready | Not accredited |
 | Labeling (STANAG 4774/4778, ZTDF, DCS) | **100% — ready** | Partial | Not ready |
-| MIP4-IES / FMN | **100% dimensional** | Partial | Not ready |
+| MIP4-IES / FMN | **100% dimensional** + HTTPS E2E test | Partial | Not ready |
 | NATO ADatP vectors | **100% — ready** | Partial | Not ready |
 | ZTDF / ACP-240 Supp. 3–4 | Ready (encoding) | Partial (no KAS/ABAC) | Not ready |
 | ACP-240 full (Ed A + Supp. 5) | Partial | Not ready | Not ready |
 | DCS cross-domain | Ready (config file) | Partial | Not ready |
-| Crypto / PKI | Conformance keys; FIPS build verified | PKI loaders exist; not default | RSA outside FIPS module |
+| Crypto / PKI | Production env PKI + conformance flag | PKI loaders exist; not default | RSA outside FIPS module |
 | MIM manifest (OWL import) | **932/932 properties (100%)** | JC3IEDM v3.0 bundled | No authoritative MIM 5.1 OWL |
 | Policy plane (CMBAC) | Clearance + releasability subset | Partial | Not ready |
 | Audit | Durable envelope JSONL + SIEM export | Partial | WORM / accredited SIEM not implemented |
@@ -46,6 +46,13 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | MIP4-IES conformance runner | `mim-mip4-conformance` + `ainextgenc2 --mip4` (140/140 pass) |
 | FIPS build blocked on Rust 1.83 | `rust-toolchain.toml` 1.85 + `SecureRandom` import fix |
 | mimworld.org OWL 404 | DISO mirror + bundled `models/ontology/JC3IEDM.owl` fallback |
+| Handling caveats not enforced in PDP | `mim-policy/src/pdp.rs` — restrictive category vs `SubjectAttributes.handling_caveats` |
+| `mission_id` not evaluated by PDP | `SecurityDomain.mission_compartments` + environment/subject `mission_id` |
+| Audit file sink lost hash chain | `FileAuditSink` writes `AuditEnvelope` JSONL; `AuditLog::load_from_file()` |
+| No SIEM export connector | `forward_siem_to_file()`, `forward_log_http()` in `mim-audit` |
+| DCS audit not wired in config/scenario | `[audit]` in `config/dcs-coalition.toml`; DCS scenario exports SIEM JSON |
+| Conformance PKI always default | `mim-crypto/runtime_pki.rs` — production PEM via env; `MIM_CONFORMANCE_KEYS=1` for lab |
+| No live HTTPS E2E in CI | `mim-transport-http/tests/https_e2e.rs` + `.github/workflows/ci.yml` |
 
 ---
 
@@ -69,7 +76,9 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 ### 1.4 Conformance / lab key material
 
 - **Location:** `mim-crypto/src/keys.rs`, `fixtures/nmb-conformance-rsa.pk8`
-- **Limitation:** Deterministic 2048-bit RSA fixture; not suitable for operational deployment.
+- **Implemented:** `load_key_ring()` / `load_trust_store()` load production PKCS#8/SPKI paths from environment; conformance fixture only when `MIM_CONFORMANCE_KEYS=1`.
+- **See:** `config/pki.env.example`
+- **Limitation:** Deterministic conformance key remains unsuitable for operational deployment; production paths must be supplied explicitly.
 
 ### 1.5 NMBS and KAS keys collapsed in demos
 
@@ -177,7 +186,8 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ### 7.3 Default trust store is conformance PKI
 
-- **Limitation:** HTTP server trusts conformance NMBS key unless configured with `NmbTrustStore`.
+- **Implemented:** `HttpExchangeConfig::from_env()` loads `MIM_NMB_TRUST` by default; `MIM_CONFORMANCE_KEYS=1` selects conformance fixture.
+- **Limitation:** Operators must configure trust PEM paths or explicitly enable conformance mode.
 
 ### 7.4 Raw `ReplicationAgent` copies full journal
 
@@ -232,17 +242,67 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ---
 
-## 11. Suggested remediation priority
+## 11. Remaining work inventory
 
-1. **National/coalition compartment scenario** (SAR, LOC, dual-broker)
-2. **Production PKI** wired into DCS scenario and HTTP server defaults (feature-flag conformance)
-3. **Live HTTPS E2E** in CI
-4. **MIP4-IES JSON-LD wire profile** and NATO accreditation test vectors
-5. **LDAP/SAML clearance** in PIP (structured NATO clearance)
-6. **WORM / SIEM connectors** for audit pipeline
-7. **Signed SPIF distribution** workflow (NMRR-equivalent)
-8. **KAS client stub** with ABAC gate before CEK unwrap
-9. **Authoritative MIM 5.1 OWL** when MIP republishes mimworld downloads
+| # | Item | Tier unlocked | Effort | Status |
+|---|------|---------------|--------|--------|
+| 1 | National/coalition dual-broker compartment scenario (SAR, LOC) | Coalition exercise | Medium | **Deferred** |
+| 2 | Production PKI defaults (`MIM_NMB_TRUST`, feature-flag conformance) | Coalition exercise | Low–medium | **Done** |
+| 3 | Live HTTPS E2E in CI | Coalition exercise / MIP4 pilot | Medium | **Done** |
+| 4 | LDAP/SAML PIP stub (structured NATO clearance) | Coalition exercise | Medium | Open |
+| 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | Open |
+| 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | Open |
+| 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | Open |
+| 8 | Signed SPIF distribution (NMRR-equivalent workflow) | Classified accredited | High | Open |
+| 9 | Authoritative MIM 5.1 OWL (when mimworld republishes) | Manifest accuracy | External | Open |
+
+---
+
+## 12. Recommended implementation order (ROI)
+
+Tier 1 item **#1 (dual-broker SAR/LOC scenario) is deferred** per project direction. Next highest ROI from the remaining open items:
+
+### Tier 1 — implement next
+
+**1. LDAP/SAML PIP stub (structured NATO clearance)**  
+- **Why:** Policy plane bottleneck is caller-supplied `SubjectAttributes`; fixture-driven PIP unlocks realistic clearance without full IdP.  
+- **Effort:** Medium.
+
+**2. MIP4-IES JSON-LD wire profile (incremental)**  
+- **Why:** Largest MIP4 transport gap independent of NATO shipping vectors.  
+- **Effort:** Medium–high.
+
+**3. KAS client stub + ABAC gate before CEK unwrap**  
+- **Why:** Main path to ACP-240 full; ZTDF encoding is ready.  
+- **Effort:** High.
+
+### Tier 2 — later
+
+**4. National/coalition dual-broker compartment scenario (SAR / LOC)** — deferred; exercises PDP when scheduled.  
+**5. WORM audit / accredited SIEM** — infrastructure/accreditation.  
+**6. Signed SPIF distribution (NMRR)** — policy-admin maturity.  
+**7. Authoritative MIM 5.1 OWL** — blocked on mimworld.
+
+### Production PKI (implemented)
+
+Set production paths (see `config/pki.env.example`):
+
+```bash
+export MIM_NMB_TRUST=/etc/mim/nmb-trust.pem
+export MIM_NMB_SIGNING_KEY=/etc/mim/nmb-signing.pk8
+export MIM_KAS_SIGNING_KEY=/etc/mim/kas-signing.pk8
+```
+
+Lab / CI conformance mode:
+
+```bash
+export MIM_CONFORMANCE_KEYS=1
+```
+
+### HTTPS E2E (implemented)
+
+- Integration test: `cargo test -p mim-transport-http --test https_e2e`
+- CI workflow: `.github/workflows/ci.yml` (sets `MIM_CONFORMANCE_KEYS=1`)
 
 ---
 
@@ -254,6 +314,8 @@ cargo run -p ainextgenc2
 cargo run -p ainextgenc2 -- --labeling
 cargo run -p ainextgenc2 -- --mip4
 cargo run -p ainextgenc2 -- --adatp
+cargo run --example dcs_cross_domain
+cargo test -p mim-transport-http --test https_e2e
 cargo run -p mim-import -- --source bundled:jc3iedm \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 ```
