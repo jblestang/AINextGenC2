@@ -2,10 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use mim_core::MimResult;
 
-/// Parsed subset of an OWL/RDF-XML ontology relevant to MIM import.
+/// Parsed OWL/RDF-XML ontology relevant to MIM import.
 #[derive(Clone, Debug, Default)]
 pub struct OwlModel {
     pub classes: BTreeMap<String, OwlClass>,
+    pub properties: BTreeMap<String, OwlProperty>,
     pub enumerations: BTreeMap<String, Vec<String>>,
 }
 
@@ -15,6 +16,23 @@ pub struct OwlClass {
     pub label: Option<String>,
     pub parents: Vec<String>,
     pub is_enumeration: bool,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct OwlProperty {
+    pub name: String,
+    pub label: Option<String>,
+    pub property_type: OwlPropertyKind,
+    pub domain: Option<String>,
+    pub range: Option<String>,
+    pub parents: Vec<String>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum OwlPropertyKind {
+    #[default]
+    Object,
+    Data,
 }
 
 impl OwlModel {
@@ -51,6 +69,9 @@ mod owl_xml {
     #[derive(Default)]
     struct ParserState {
         current_class: Option<String>,
+        current_property: Option<String>,
+        pending_domain: Option<String>,
+        pending_range: Option<String>,
         in_label: bool,
         in_one_of: bool,
         one_of_owner: Option<String>,
@@ -77,13 +98,22 @@ mod owl_xml {
                 Ok(Event::Empty(ref e)) => handle_empty(e, &mut model, &mut state)?,
                 Ok(Event::End(ref e)) => handle_end(e, &mut model, &mut state)?,
                 Ok(Event::Text(ref e)) if state.in_label => {
-                    if let Some(class_name) = state.current_class.clone() {
-                        let text = String::from_utf8_lossy(e.as_ref()).into_owned();
-                        if !text.is_empty() {
+                    let text = String::from_utf8_lossy(e.as_ref()).into_owned();
+                    if !text.is_empty() {
+                        if let Some(class_name) = state.current_class.clone() {
                             let entry = model.classes.entry(class_name).or_insert_with(|| OwlClass {
                                 name: "unknown".into(),
                                 ..OwlClass::default()
                             });
+                            entry.label = Some(text);
+                        } else if let Some(prop_name) = state.current_property.clone() {
+                            let entry = model
+                                .properties
+                                .entry(prop_name)
+                                .or_insert_with(|| super::OwlProperty {
+                                    name: "unknown".into(),
+                                    ..super::OwlProperty::default()
+                                });
                             entry.label = Some(text);
                         }
                     }
@@ -111,10 +141,69 @@ mod owl_xml {
                         state.one_of_values.push(class_name);
                     } else {
                         state.current_class = Some(class_name.clone());
+                        state.current_property = None;
                         model.classes.entry(class_name.clone()).or_insert_with(|| OwlClass {
                             name: class_name.clone(),
                             ..OwlClass::default()
                         });
+                    }
+                }
+            }
+            "ObjectProperty" | "DatatypeProperty" => {
+                if let Some(prop_name) = class_ref(e) {
+                    state.current_property = Some(prop_name.clone());
+                    state.current_class = None;
+                    let kind = if name == "ObjectProperty" {
+                        super::OwlPropertyKind::Object
+                    } else {
+                        super::OwlPropertyKind::Data
+                    };
+                    let mut property = super::OwlProperty {
+                        name: prop_name.clone(),
+                        property_type: kind,
+                        ..super::OwlProperty::default()
+                    };
+                    if let Some(domain) = state.pending_domain.take() {
+                        property.domain = Some(domain);
+                    }
+                    if let Some(range) = state.pending_range.take() {
+                        property.range = Some(range);
+                    }
+                    model.properties.insert(prop_name.clone(), property);
+                }
+            }
+            "subPropertyOf" => {
+                if let (Some(child), Some(parent)) =
+                    (state.current_property.clone(), resource_ref(e))
+                {
+                    let entry = model.properties.entry(child.clone()).or_insert_with(|| super::OwlProperty {
+                        name: child.clone(),
+                        ..super::OwlProperty::default()
+                    });
+                    if !entry.parents.contains(&parent) {
+                        entry.parents.push(parent);
+                    }
+                }
+            }
+            "domain" => {
+                if let Some(domain) = resource_ref(e) {
+                    if let Some(prop) = &state.current_property {
+                        if let Some(entry) = model.properties.get_mut(prop) {
+                            entry.domain = Some(domain.clone());
+                        }
+                    } else {
+                        state.pending_domain = Some(domain);
+                    }
+                }
+            }
+            "range" => {
+                if let Some(range) = resource_ref(e) {
+                    if let Some(prop) = &state.current_property {
+                        if let Some(entry) = model.properties.get_mut(prop) {
+                            entry.range = Some(range.clone());
+                        }
+                    } else {
+                        state.pending_range = Some(range);
                     }
                 }
             }
@@ -157,6 +246,26 @@ mod owl_xml {
             if let (Some(child), Some(parent)) = (state.current_class.clone(), resource_ref(e)) {
                 add_parent(model, &child, parent);
             }
+        } else if name == "domain" {
+            if let Some(domain) = resource_ref(e) {
+                if let Some(prop) = &state.current_property {
+                    if let Some(entry) = model.properties.get_mut(prop) {
+                        entry.domain = Some(domain);
+                    }
+                } else {
+                    state.pending_domain = Some(domain);
+                }
+            }
+        } else if name == "range" {
+            if let Some(range) = resource_ref(e) {
+                if let Some(prop) = &state.current_property {
+                    if let Some(entry) = model.properties.get_mut(prop) {
+                        entry.range = Some(range);
+                    }
+                } else {
+                    state.pending_range = Some(range);
+                }
+            }
         }
         Ok(())
     }
@@ -184,6 +293,23 @@ mod owl_xml {
             }
             "label" => state.in_label = false,
             "Class" => state.current_class = None,
+            "ObjectProperty" | "DatatypeProperty" => {
+                if let Some(prop) = state.current_property.clone() {
+                    if let Some(entry) = model.properties.get_mut(&prop) {
+                        if entry.domain.is_none() {
+                            if let Some(domain) = state.pending_domain.take() {
+                                entry.domain = Some(domain);
+                            }
+                        }
+                        if entry.range.is_none() {
+                            if let Some(range) = state.pending_range.take() {
+                                entry.range = Some(range);
+                            }
+                        }
+                    }
+                }
+                state.current_property = None;
+            }
             _ => {}
         }
         Ok(())
@@ -250,6 +376,16 @@ mod tests {
       </owl:oneOf>
     </owl:equivalentClass>
   </owl:Class>
+  <owl:ObjectProperty rdf:ID="producedTrack">
+    <rdfs:domain rdf:resource="#ACTION-EVENT"/>
+    <rdfs:range rdf:resource="#ACTION"/>
+    <rdfs:label>produced track</rdfs:label>
+  </owl:ObjectProperty>
+  <owl:DatatypeProperty rdf:ID="speed">
+    <rdfs:domain rdf:resource="#MilitaryConvoy"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#decimal"/>
+    <rdfs:label>speed</rdfs:label>
+  </owl:DatatypeProperty>
 </rdf:RDF>"##;
 
     #[test]
@@ -264,5 +400,9 @@ mod tests {
             model.enumerations.get("UnitRangeCode").map(Vec::as_slice),
             Some(&["CloseRange".to_owned(), "ShortRange".to_owned()][..])
         );
+        assert!(model.properties.contains_key("producedTrack"));
+        assert!(model.properties.contains_key("speed"));
+        let produced = model.properties.get("producedTrack").expect("prop");
+        assert_eq!(produced.domain.as_deref(), Some("ACTION-EVENT"));
     }
 }

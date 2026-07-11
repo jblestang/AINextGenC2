@@ -4,6 +4,8 @@ use mim_policy::{
     SubjectAttributes,
 };
 
+use crate::config::DcsConfig;
+
 /// Decision from a cross-domain guard evaluation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum GuardDecision {
@@ -82,24 +84,37 @@ impl CrossDomainGuard {
     }
 
     pub fn preset_high_to_low() -> Self {
-        Self::from_policy_plane(
-            PolicyEnforcementPoint::from_preset_high_to_low(),
-            SecurityDomain::new("DOMAIN-HIGH", "High Side", mim_labeling::ClassificationLevel::Secret)
-                .with_releasable_to(vec!["USA".into(), "GBR".into(), "DEU".into()]),
-            SecurityDomain::new(
-                "DOMAIN-LOW",
-                "Low Side",
-                mim_labeling::ClassificationLevel::Restricted,
-            )
-            .with_releasable_to(vec!["USA".into(), "GBR".into()]),
-        )
+        DcsConfig::conformance_high_to_low()
+            .build_guard()
+            .expect("conformance DCS config")
+    }
+
+    /// Build guard from external TOML/JSON configuration file.
+    pub fn from_config_file(path: impl AsRef<std::path::Path>) -> LabelResult<Self> {
+        let config = DcsConfig::load_path(path).map_err(|e| {
+            mim_labeling::LabelError::CrossDomain(format!("DCS config: {e}"))
+        })?;
+        config.build_guard().map_err(|e| {
+            mim_labeling::LabelError::CrossDomain(format!("DCS guard build: {e}"))
+        })
+    }
+
+    /// Build guard from in-memory configuration (domains, SPIF paths, downgrade rules).
+    pub fn from_config(config: &DcsConfig) -> LabelResult<Self> {
+        config.build_guard().map_err(|e| {
+            mim_labeling::LabelError::CrossDomain(format!("DCS guard build: {e}"))
+        })
     }
 
     /// Cross-domain guard whose releasability constraints are SPIF-administered.
     pub fn from_spif_registry(registry: mim_spif::SpifRegistry) -> LabelResult<Self> {
         let pap = mim_policy::PolicyAdministrationPoint::with_spif_registry(registry.clone())
             .map_err(|e| mim_labeling::LabelError::CrossDomain(e.to_string()))?;
-        let (source, target) = mim_policy::guard_domains_from_spif(&registry)
+        let (source, target) = mim_policy::guard_domains_from_spif(
+            &registry,
+            "DOMAIN-HIGH",
+            "DOMAIN-LOW",
+        )
             .map_err(|e| mim_labeling::LabelError::CrossDomain(e.to_string()))?;
         Ok(Self::from_policy_plane(
             PolicyEnforcementPoint::new(

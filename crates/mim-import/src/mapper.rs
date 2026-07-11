@@ -133,6 +133,20 @@ impl OwlImporter {
             code_lists.push(list);
         }
 
+        for (prop_name, property) in &owl.properties {
+            if let Some(domain) = &property.domain {
+                let domain_name = to_pascal_case(domain.trim_start_matches('#'));
+                if taxonomy.iter().any(|n| n.name == domain_name) {
+                    elements.push(property_to_element(
+                        prop_name,
+                        property,
+                        &domain_name,
+                        &options,
+                    )?);
+                }
+            }
+        }
+
         // Pad code lists from datatype property domains if needed.
         pad_code_lists(owl, &mut code_lists, &options)?;
 
@@ -407,6 +421,45 @@ fn class_to_taxonomy_node(
         action_kind: if is_object { None } else { infer_action_kind(name) },
         definition,
         package_path,
+    })
+}
+
+fn property_to_element(
+    name: &str,
+    property: &crate::owl::OwlProperty,
+    parent_class: &str,
+    options: &ImportOptions,
+) -> MimResult<ModelElementSpec> {
+    let display = to_pascal_case(name);
+    let uri = MimUri::parse(&format!(
+        "https://www.mimworld.org/mim/{}/Classifiers/Object/{parent_class}/{display}",
+        options.version
+    ))?;
+    Ok(ModelElementSpec {
+        name: display.clone(),
+        kind: ModelElementKind::Attribute,
+        semantic_id: semantic_id_for(name),
+        uri,
+        package_path: format!("Classifiers::Object::{parent_class}"),
+        definition: property
+            .label
+            .clone()
+            .unwrap_or_else(|| format!("Imported property {}", display.clone())),
+        parent_class: Some(parent_class.to_owned()),
+        representation_term: if property.property_type == crate::owl::OwlPropertyKind::Data {
+            Some(mim_core::RepresentationTerm::Text)
+        } else {
+            None
+        },
+        representation_metadata: None,
+        multiplicity_lower: Some(0),
+        multiplicity_upper: Some(if property.property_type == crate::owl::OwlPropertyKind::Object {
+            "*".into()
+        } else {
+            "1".into()
+        }),
+        is_mandatory: false,
+        is_nillable: true,
     })
 }
 

@@ -19,6 +19,7 @@
 )]
 
 pub mod context;
+pub mod downgrade;
 pub mod error;
 pub mod pap;
 pub mod pdp;
@@ -30,6 +31,7 @@ pub mod store;
 pub use context::{
     AccessOperation, EnvironmentAttributes, PolicyContext, ResourceAttributes, SubjectAttributes,
 };
+pub use downgrade::{downgraded_label_for_target, requires_downgrade, DowngradeConfig};
 pub use error::{PolicyError, PolicyResult};
 pub use pap::PolicyAdministrationPoint;
 pub use pdp::{PolicyDecision, PolicyDecisionPoint, PolicyEffect};

@@ -46,7 +46,44 @@ impl MimStack {
         let mut file = File::open(path)?;
         let mut data = String::new();
         file.read_to_string(&mut data)?;
-        Self::load_embedded(&data)
+        let mut manifest = MimManifest::from_json(&data)?;
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.contains("mim-full"))
+        {
+            Self::merge_metadata_from_core(&mut manifest)?;
+        }
+        let registry = ModelRegistry::from_manifest(manifest.clone())?;
+        Ok(Self { manifest, registry })
+    }
+
+    fn merge_metadata_from_core(full: &mut MimManifest) -> MimResult<()> {
+        let core = MimManifest::from_json(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/mim-core-5.1.json"
+        )))?;
+        let metadata_names = [
+            "Metadata",
+            "Reporter",
+            "Observer",
+            "OperationalAppraisal",
+            "ValidityPeriod",
+            "SecurityClassification",
+        ];
+        for name in metadata_names {
+            if !full.taxonomy.iter().any(|n| n.name == name) {
+                if let Some(node) = core.taxonomy.iter().find(|n| n.name == name) {
+                    full.taxonomy.push(node.clone());
+                }
+            }
+            if !full.elements.iter().any(|e| e.name == name) {
+                if let Some(element) = core.elements.iter().find(|e| e.name == name) {
+                    full.elements.push(element.clone());
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn manifest(&self) -> &MimManifest {

@@ -18,4 +18,4 @@ pub mod owl;
 
 pub use fetch::{download_to_path, load_owl_source, MIMWORLD_JC3IEDM_OWL_URL, MIMWORLD_MIM_OWL_URL};
 pub use mapper::{ImportOptions, ImportReport, OwlImporter};
-pub use owl::OwlModel;
+pub use owl::{OwlClass, OwlModel, OwlProperty, OwlPropertyKind};

@@ -43,6 +43,8 @@ pub struct PolicyStore {
     domains: IndexMap<String, SecurityDomain>,
     cross_domain_policies: Vec<CrossDomainPolicy>,
     spif_policies: Vec<mim_spif::SpifPolicy>,
+    #[serde(default)]
+    pub downgrade: crate::downgrade::DowngradeConfig,
 }
 
 impl PolicyStore {
@@ -51,11 +53,21 @@ impl PolicyStore {
             domains: IndexMap::new(),
             cross_domain_policies: Vec::new(),
             spif_policies: Vec::new(),
+            downgrade: crate::downgrade::DowngradeConfig::default(),
         }
     }
 
     pub fn domain(&self, id: &DomainId) -> Option<&SecurityDomain> {
         self.domains.get(&id.0)
+    }
+
+    pub fn with_downgrade_config(mut self, config: crate::downgrade::DowngradeConfig) -> Self {
+        self.downgrade = config;
+        self
+    }
+
+    pub fn downgrade_config(&self) -> &crate::downgrade::DowngradeConfig {
+        &self.downgrade
     }
 
     pub fn domains(&self) -> impl Iterator<Item = &SecurityDomain> {

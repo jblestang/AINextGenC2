@@ -49,7 +49,10 @@ pub struct ConfidentialityLabel {
     pub policy: LabelPolicy,
     pub classification: ClassificationLevel,
     pub privacy_mark: Option<String>,
+    pub colour: Option<String>,
+    pub marking_data: Option<String>,
     pub categories: Vec<CategoryMarking>,
+    pub alternative_labels: Vec<ConfidentialityLabel>,
     pub creation_time: Option<DateTime<Utc>>,
     pub review_date_time: Option<DateTime<Utc>>,
 }
@@ -60,10 +63,28 @@ impl ConfidentialityLabel {
             policy,
             classification,
             privacy_mark: None,
+            colour: None,
+            marking_data: None,
             categories: Vec::new(),
+            alternative_labels: Vec::new(),
             creation_time: None,
             review_date_time: None,
         }
+    }
+
+    pub fn with_colour(mut self, colour: impl Into<String>) -> Self {
+        self.colour = Some(colour.into());
+        self
+    }
+
+    pub fn with_marking_data(mut self, data: impl Into<String>) -> Self {
+        self.marking_data = Some(data.into());
+        self
+    }
+
+    pub fn with_alternative_label(mut self, label: ConfidentialityLabel) -> Self {
+        self.alternative_labels.push(label);
+        self
     }
 
     pub fn with_category(mut self, category: CategoryMarking) -> Self {

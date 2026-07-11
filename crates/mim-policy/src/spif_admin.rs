@@ -16,6 +16,9 @@ pub fn apply_spif_to_store(store: &mut PolicyStore, registry: &SpifRegistry) -> 
 }
 
 fn sync_domain_releasability(store: &mut PolicyStore, spif: &SpifPolicy) -> PolicyResult<()> {
+    if spif.policy_id != "NATO" {
+        return Ok(());
+    }
     let releasable = spif
         .categories
         .iter()
@@ -37,7 +40,17 @@ fn sync_domain_releasability(store: &mut PolicyStore, spif: &SpifPolicy) -> Poli
 impl PolicyAdministrationPoint {
     /// Load SPIF policies into the PRP and align domain releasability with SPIF categories.
     pub fn with_spif_registry(registry: SpifRegistry) -> PolicyResult<Self> {
-        let mut pap = Self::with_preset_high_to_low();
+        let mut pap = Self::new(PolicyStore::new());
+        let (source, target) = guard_domains_from_spif(&registry, "DOMAIN-HIGH", "DOMAIN-LOW")?;
+        let source_id = source.id.clone();
+        let target_id = target.id.clone();
+        pap.register_domain(source)?;
+        pap.register_domain(target)?;
+        pap.add_cross_domain_policy(cross_domain_policy_from_spif(
+            source_id,
+            target_id,
+            registry.get("NATO").expect("NATO SPIF"),
+        ))?;
         for policy in registry.policies() {
             pap.store_mut().register_spif_policy(policy.clone())?;
         }
@@ -58,7 +71,11 @@ impl PolicyAdministrationPoint {
     }
 }
 
-pub fn guard_domains_from_spif(registry: &SpifRegistry) -> PolicyResult<(SecurityDomain, SecurityDomain)> {
+pub fn guard_domains_from_spif(
+    registry: &SpifRegistry,
+    source_id: &str,
+    target_id: &str,
+) -> PolicyResult<(SecurityDomain, SecurityDomain)> {
     let nato = registry.get("NATO").ok_or_else(|| {
         PolicyError::NotFound("NATO SPIF policy required for cross-domain guard".into())
     })?;
@@ -71,22 +88,17 @@ pub fn guard_domains_from_spif(registry: &SpifRegistry) -> PolicyResult<(Securit
         .unwrap_or_else(|| vec!["USA".into(), "GBR".into()]);
 
     let high = SecurityDomain::new(
-        "DOMAIN-HIGH",
+        source_id,
         "High Side (SPIF-administered)",
         ClassificationLevel::Secret,
     )
     .with_releasable_to(releasable.clone());
     let low = SecurityDomain::new(
-        "DOMAIN-LOW",
+        target_id,
         "Low Side (SPIF-administered)",
         ClassificationLevel::Restricted,
     )
-    .with_releasable_to(
-        releasable
-            .into_iter()
-            .filter(|c| c == "USA" || c == "GBR")
-            .collect(),
-    );
+    .with_releasable_to(releasable);
     Ok((high, low))
 }
 
@@ -125,7 +137,8 @@ mod tests {
     #[test]
     fn guard_domains_derive_releasability_from_nato_spif() {
         let registry = SpifRegistry::with_defaults();
-        let (high, _low) = guard_domains_from_spif(&registry).expect("domains");
+        let (high, _low) =
+            guard_domains_from_spif(&registry, "DOMAIN-HIGH", "DOMAIN-LOW").expect("domains");
         assert!(high.releasable_to.contains(&"USA".into()));
     }
 }

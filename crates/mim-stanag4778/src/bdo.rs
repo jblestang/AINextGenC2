@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::assertion::AssertionBinding;
 use crate::binding::{BindingMethod, BindingProfile, MetadataBinding};
+use crate::detached::{DetachedLabelResolver, FileDetachedLabelResolver, verify_detached_label};
 
 /// Binding Data Object (BDO) per STANAG 4778 with integrity verification for all profiles.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -19,38 +20,71 @@ pub struct BindingDataObject {
 
 impl BindingDataObject {
     pub fn embedded(label: ConfidentialityLabel, payload: &[u8]) -> LabelResult<Self> {
+        Self::embedded_with_nmb(label, payload, None)
+    }
+
+    pub fn embedded_with_nmb(
+        label: ConfidentialityLabel,
+        payload: &[u8],
+        signing_key: Option<&mim_crypto::SigningKey>,
+    ) -> LabelResult<Self> {
         label.validate()?;
         mim_spif::SpifValidator::with_defaults().validate_label(&label)?;
         let codec = Stanag4774Codec::new();
         let encoded = codec.serialize(&label, Stanag4774Format::JsonStructured)?;
+        let assertion = signing_key
+            .map(|key| AssertionBinding::create(&label, payload, key))
+            .transpose()?;
         Ok(Self {
             binding: MetadataBinding::embedded_json(),
             label,
             label_encoding: encoded,
             payload_digest: sha256_base64(payload),
-            assertion: None,
+            assertion,
         })
     }
 
     pub fn xml_embedded(label: ConfidentialityLabel, payload: &[u8]) -> LabelResult<Self> {
+        Self::xml_embedded_with_nmb(label, payload, None)
+    }
+
+    pub fn xml_embedded_with_nmb(
+        label: ConfidentialityLabel,
+        payload: &[u8],
+        signing_key: Option<&mim_crypto::SigningKey>,
+    ) -> LabelResult<Self> {
         label.validate()?;
         mim_spif::SpifValidator::with_defaults().validate_label(&label)?;
         let codec = Stanag4774Codec::new();
         let encoded = codec.serialize(&label, Stanag4774Format::Xml)?;
+        let assertion = signing_key
+            .map(|key| AssertionBinding::create(&label, payload, key))
+            .transpose()?;
         Ok(Self {
             binding: MetadataBinding::encapsulated_xml(),
             label,
             label_encoding: encoded,
             payload_digest: sha256_base64(payload),
-            assertion: None,
+            assertion,
         })
     }
 
     pub fn encapsulated(label: ConfidentialityLabel, payload: &[u8]) -> LabelResult<Self> {
+        Self::encapsulated_with_nmb(label, payload, None)
+    }
+
+    pub fn encapsulated_with_nmb(
+        label: ConfidentialityLabel,
+        payload: &[u8],
+        signing_key: Option<&mim_crypto::SigningKey>,
+    ) -> LabelResult<Self> {
         label.validate()?;
         mim_spif::SpifValidator::with_defaults().validate_label(&label)?;
         let codec = Stanag4774Codec::new();
         let encoded = codec.serialize(&label, Stanag4774Format::Xml)?;
+        let assertion = signing_key
+            .map(|key| AssertionBinding::create(&label, payload, key))
+            .transpose()?;
         Ok(Self {
             binding: MetadataBinding {
                 method: BindingMethod::Encapsulated,
@@ -61,15 +95,27 @@ impl BindingDataObject {
             label,
             label_encoding: encoded,
             payload_digest: sha256_base64(payload),
-            assertion: None,
+            assertion,
         })
     }
 
     pub fn detached(label: ConfidentialityLabel, payload: &[u8], label_uri: &str) -> LabelResult<Self> {
+        Self::detached_with_nmb(label, payload, label_uri, None)
+    }
+
+    pub fn detached_with_nmb(
+        label: ConfidentialityLabel,
+        payload: &[u8],
+        label_uri: &str,
+        signing_key: Option<&mim_crypto::SigningKey>,
+    ) -> LabelResult<Self> {
         label.validate()?;
         mim_spif::SpifValidator::with_defaults().validate_label(&label)?;
         let codec = Stanag4774Codec::new();
         let encoded = codec.serialize(&label, Stanag4774Format::Xml)?;
+        let assertion = signing_key
+            .map(|key| AssertionBinding::create(&label, payload, key))
+            .transpose()?;
         Ok(Self {
             binding: MetadataBinding {
                 method: BindingMethod::Detached,
@@ -80,7 +126,7 @@ impl BindingDataObject {
             label,
             label_encoding: encoded,
             payload_digest: sha256_base64(payload),
-            assertion: None,
+            assertion,
         })
     }
 
@@ -103,6 +149,15 @@ impl BindingDataObject {
     }
 
     pub fn verify(&self, payload: &[u8], verifying_key: Option<&mim_crypto::VerifyingKey>) -> LabelResult<()> {
+        self.verify_with_resolver(payload, verifying_key, &FileDetachedLabelResolver)
+    }
+
+    pub fn verify_with_resolver(
+        &self,
+        payload: &[u8],
+        verifying_key: Option<&mim_crypto::VerifyingKey>,
+        resolver: &dyn DetachedLabelResolver,
+    ) -> LabelResult<()> {
         self.label.validate()?;
         let digest = sha256_base64(payload);
         if self.payload_digest != digest {
@@ -118,6 +173,13 @@ impl BindingDataObject {
             }
         }
 
+        if let Some(assertion) = &self.assertion {
+            let key = verifying_key.ok_or_else(|| {
+                LabelError::Binding("NMBS assertion present but no verifying key supplied".into())
+            })?;
+            assertion.verify(payload, key)?;
+        }
+
         match self.binding.method {
             BindingMethod::Assertion => {
                 let assertion = self.assertion.as_ref().ok_or_else(|| {
@@ -130,9 +192,12 @@ impl BindingDataObject {
                 })?;
                 assertion.verify(payload, key)
             }
-            BindingMethod::Embedded
-            | BindingMethod::Encapsulated
-            | BindingMethod::Detached => {
+            BindingMethod::Detached => {
+                verify_detached_label(&self.label, &self.binding.label_location, resolver)?;
+                mim_spif::SpifValidator::with_defaults().validate_label(&self.label)?;
+                Ok(())
+            }
+            BindingMethod::Embedded | BindingMethod::Encapsulated => {
                 mim_spif::SpifValidator::with_defaults().validate_label(&self.label)?;
                 Ok(())
             }
@@ -151,5 +216,9 @@ impl BindingDataObject {
 
     pub fn requires_assertion_binding(&self) -> bool {
         self.binding.method == BindingMethod::Assertion
+    }
+
+    pub fn has_nmb_signature(&self) -> bool {
+        self.assertion.is_some()
     }
 }

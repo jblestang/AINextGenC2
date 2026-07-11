@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ISO/IEC 29008:2011 XML-SPIF schema subset for ADatP-4774.1 coalition policies.
+  Validates the structure used by bundled NATO/ACME/CAPCO/UK fixtures.
+  Full XML-SPIF 2.x schema: schemas/xmlspif.xsd (http://www.xmlspif.org/spif)
+-->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  targetNamespace="urn:iso:std:iso:29008:2011:confidentialitymetadatalabel"
+  xmlns:spif="urn:iso:std:iso:29008:2011:confidentialitymetadatalabel"
+  elementFormDefault="qualified">
+
+  <xs:element name="spif" type="spif:SpifDocument"/>
+
+  <xs:complexType name="SpifDocument">
+    <xs:sequence>
+      <xs:element name="versioninfo" type="spif:VersionInfo" minOccurs="0"/>
+      <xs:element name="securityPolicyId" type="spif:SecurityPolicyId"/>
+      <xs:element name="securityClassifications" type="spif:SecurityClassifications"/>
+      <xs:element name="securityCategories" type="spif:SecurityCategories" minOccurs="0"/>
+      <xs:element name="validations" type="spif:Validations" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="VersionInfo">
+    <xs:sequence>
+      <xs:element name="spifversion" type="xs:string" minOccurs="0"/>
+      <xs:element name="issuingauthority" type="xs:string" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SecurityPolicyId">
+    <xs:sequence>
+      <xs:element name="identifier" type="spif:PolicyIdentifier"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="PolicyIdentifier">
+    <xs:simpleContent>
+      <xs:extension base="xs:string">
+        <xs:attribute name="URL" type="xs:string" use="optional"/>
+        <xs:attribute name="url" type="xs:string" use="optional"/>
+      </xs:extension>
+    </xs:simpleContent>
+  </xs:complexType>
+
+  <xs:complexType name="SecurityClassifications">
+    <xs:sequence>
+      <xs:element name="securityClassification" type="spif:SecurityClassification" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SecurityClassification">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SecurityCategories">
+    <xs:sequence>
+      <xs:element name="securityCategory" type="spif:SecurityCategory" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="SecurityCategory">
+    <xs:sequence>
+      <xs:element name="name" type="xs:string"/>
+      <xs:element name="categoryName" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+      <xs:element name="genericValue" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+    <xs:attribute name="type" type="xs:string" use="optional"/>
+    <xs:attribute name="tagtype" type="xs:string" use="optional"/>
+  </xs:complexType>
+
+  <xs:complexType name="Validations">
+    <xs:sequence>
+      <xs:element name="validation" type="spif:Validation" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:complexType name="Validation">
+    <xs:sequence>
+      <xs:element name="classification" type="xs:string"/>
+      <xs:element name="categoryName" type="xs:string"/>
+      <xs:element name="requiredValue" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+    </xs:sequence>
+  </xs:complexType>
+</xs:schema>

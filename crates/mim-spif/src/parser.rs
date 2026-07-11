@@ -1,15 +1,29 @@
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::Reader;
 
-use crate::policy::{SpifCategory, SpifCategoryType, SpifPolicy, SpifValidation};
+use crate::policy::{SpifCategory, SpifCategoryType, SpifPolicy, SpifValidation, SpifVersionInfo};
+use crate::xsd;
 
 /// Parse an XML-SPIF policy document per ADatP-4774.1 / ISO 29008.
 pub fn parse_spif_xml(data: &str) -> Result<SpifPolicy, String> {
+    parse_spif_xml_with_options(data, true)
+}
+
+/// Parse SPIF XML, optionally skipping XSD validation (for negative tests).
+pub fn parse_spif_xml_with_options(data: &str, validate_xsd: bool) -> Result<SpifPolicy, String> {
+    if validate_xsd {
+        xsd::validate_spif_xsd(data)?;
+    }
+
     let mut reader = Reader::from_str(data);
     reader.config_mut().trim_text(true);
 
     let mut policy_id = String::new();
     let mut policy_oid = None;
+    let mut version_info = None;
+    let mut spif_version = None;
+    let mut issuing_authority = None;
+    let mut in_versioninfo = false;
     let mut allowed_classifications = Vec::new();
     let mut categories = Vec::new();
     let mut validations = Vec::new();
@@ -54,6 +68,11 @@ pub fn parse_spif_xml(data: &str) -> Result<SpifPolicy, String> {
                         val_category.clear();
                         val_required.clear();
                     }
+                    "versioninfo" => {
+                        in_versioninfo = true;
+                        spif_version = None;
+                        issuing_authority = None;
+                    }
                     "securityPolicyId" | "policyIdentifier" => {}
                     _ => {}
                 }
@@ -75,6 +94,10 @@ pub fn parse_spif_xml(data: &str) -> Result<SpifPolicy, String> {
                 let name = local_name_bytes(e.local_name().as_ref());
                 match name.as_str() {
                     "identifier" if policy_id.is_empty() => policy_id = current_text.clone(),
+                    "spifversion" if in_versioninfo => spif_version = Some(current_text.clone()),
+                    "issuingauthority" if in_versioninfo => {
+                        issuing_authority = Some(current_text.clone());
+                    }
                     "name" if in_classification => class_name = current_text.clone(),
                     "name" if in_category => cat_name = current_text.clone(),
                     "type" | "tagtype" if in_category => {
@@ -118,6 +141,13 @@ pub fn parse_spif_xml(data: &str) -> Result<SpifPolicy, String> {
                         }
                         in_validation = false;
                     }
+                    "versioninfo" if in_versioninfo => {
+                        version_info = Some(SpifVersionInfo {
+                            spif_version: spif_version.clone(),
+                            issuing_authority: issuing_authority.clone(),
+                        });
+                        in_versioninfo = false;
+                    }
                     _ => {}
                 }
                 current_text.clear();
@@ -136,6 +166,7 @@ pub fn parse_spif_xml(data: &str) -> Result<SpifPolicy, String> {
     Ok(SpifPolicy {
         policy_id,
         policy_oid,
+        version_info,
         allowed_classifications,
         categories,
         validations,
