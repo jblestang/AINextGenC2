@@ -12,6 +12,8 @@
     clippy::unimplemented
 )]
 
+pub mod scenarios;
 pub mod stack;
 
+pub use scenarios::{AirDefenseRadarScenario, RadarDetection, ScenarioOutput};
 pub use stack::MimStack;

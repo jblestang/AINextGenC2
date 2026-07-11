@@ -24,6 +24,18 @@ impl PropertyValue {
         }
     }
 
+    pub fn json(name: impl Into<String>, value: Value) -> Self {
+        Self {
+            name: name.into(),
+            semantic_id: None,
+            value: Nillable::value(value),
+        }
+    }
+
+    pub fn number(name: impl Into<String>, value: f64) -> Self {
+        Self::json(name, Value::from(value))
+    }
+
     pub fn nil(name: impl Into<String>, reason: NilReason) -> Self {
         Self {
             name: name.into(),
@@ -98,6 +110,10 @@ impl InstanceStore {
 
     pub fn get(&self, oid: &ObjectIdentifier) -> Option<&MimInstance> {
         self.instances.get(oid)
+    }
+
+    pub fn get_mut(&mut self, oid: &ObjectIdentifier) -> Option<&mut MimInstance> {
+        self.instances.get_mut(oid)
     }
 
     pub fn len(&self) -> usize {

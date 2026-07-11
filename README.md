@@ -70,6 +70,24 @@ models/mim-core-5.1.json  →  mim-model (registry)  →  mim-runtime (instances
 
 To reach 100% coverage, export the official MIM 5.1+ OWL/XSD products to the manifest format and load via `MimStack::load_path()`.
 
+### Air defense radar example
+
+Demonstrates a `SiteAirDefenceRadar` sensor producing MIM `TrackIdentifier` and `Target` instances for each detection, linked via associations (`producedTrack`, `reportedBy`, `trackIdentifier`):
+
+```bash
+cargo run --example air_defense_radar
+```
+
+The example prints two demo tracks (HOSTILE-1, UNKNOWN-2) and the full MIM exchange JSON. Use the scenario API in library code:
+
+```rust
+use ainextgenc2::{AirDefenseRadarScenario, MimStack};
+
+let stack = MimStack::load()?;
+let output = AirDefenseRadarScenario::demo().run(&stack)?;
+println!("{}", output.exchange_json);
+```
+
 ## License
 
 MIT OR Apache-2.0
