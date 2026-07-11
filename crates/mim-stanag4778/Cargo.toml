@@ -1,0 +1,18 @@
+[package]
+name = "mim-stanag4778"
+description = "STANAG 4778 (ADatP-4778) metadata binding mechanism for MIM data"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mim-core = { workspace = true }
+mim-labeling = { workspace = true }
+mim-stanag4774 = { workspace = true }
+base64 = { workspace = true }
+hmac = { workspace = true }
+sha2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

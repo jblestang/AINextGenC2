@@ -3,6 +3,7 @@ use std::process;
 
 use ainextgenc2::MimStack;
 use mim_compliance::ComplianceDimension;
+use mim_labeling_compliance::LabelingComplianceChecker;
 
 fn main() {
     if let Err(err) = run() {
@@ -13,7 +14,12 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
-    let path = args.get(1).map(String::as_str);
+    let labeling_only = args.iter().any(|a| a == "--labeling");
+    let path = args.get(1).filter(|a| !a.starts_with("--")).map(String::as_str);
+
+    if labeling_only {
+        return run_labeling_compliance();
+    }
 
     let stack = match path {
         Some(p) => MimStack::load_path(p)?,
@@ -21,6 +27,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let report = stack.compliance_report();
+    let labeling = stack.labeling_compliance_report();
 
     println!("AINextGenC2 MIM Stack");
     println!("=====================");
@@ -33,7 +40,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         stack.registry().code_list_count()
     );
     println!(
-        "Overall:      {:.1}% ({})",
+        "MIM:          {:.1}% ({})",
         report.overall_score * 100.0,
         if report.is_fully_compliant {
             "FULLY COMPLIANT"
@@ -41,19 +48,35 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
             "NOT YET COMPLIANT"
         }
     );
+    println!(
+        "Labeling:     {:.1}% ({})",
+        labeling.overall_score * 100.0,
+        if labeling.is_fully_compliant {
+            "FULLY COMPLIANT"
+        } else {
+            "NOT YET COMPLIANT"
+        }
+    );
     println!();
-    println!("Dimensions:");
+    println!("MIM Dimensions:");
     for dimension in &report.dimensions {
-        let status = match dimension.status {
-            mim_compliance::ComplianceStatus::Compliant => "OK",
-            mim_compliance::ComplianceStatus::Partial => "PARTIAL",
-            mim_compliance::ComplianceStatus::NonCompliant => "FAIL",
-        };
-        println!(
-            "  [{status}] {:?}: {:.0}% — {}",
-            dimension.dimension,
-            dimension.score * 100.0,
-            dimension.message
+        print_dimension(
+            &format!("{dimension:?}"),
+            dimension.score,
+            &dimension.message,
+            dimension.status == mim_compliance::ComplianceStatus::Compliant,
+        );
+    }
+
+    println!();
+    println!("Labeling Dimensions (STANAG 4774/4778, ZTDF, DCS):");
+    for dimension in &labeling.dimensions {
+        let ok = dimension.status == mim_labeling_compliance::LabelingComplianceStatus::Compliant;
+        print_dimension(
+            &format!("{:?}", dimension.dimension),
+            dimension.score,
+            &dimension.message,
+            ok,
         );
     }
 
@@ -67,10 +90,48 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     for (idx, item) in report.recommendations.iter().enumerate() {
         println!("  {}. {item}", idx + 1);
     }
+    for item in &labeling.recommendations {
+        if !report.recommendations.iter().any(|r| r == item) {
+            println!("  -. {item}");
+        }
+    }
 
-    if !report.is_fully_compliant {
+    if !report.is_fully_compliant || !labeling.is_fully_compliant {
         process::exit(2);
     }
 
     Ok(())
+}
+
+fn run_labeling_compliance() -> Result<(), Box<dyn std::error::Error>> {
+    let report = LabelingComplianceChecker::with_defaults().evaluate();
+    println!("Labeling Compliance (STANAG 4774/4778, ZTDF, DCS)");
+    println!("================================================");
+    println!(
+        "Overall: {:.1}% ({})",
+        report.overall_score * 100.0,
+        if report.is_fully_compliant {
+            "FULLY COMPLIANT"
+        } else {
+            "NOT YET COMPLIANT"
+        }
+    );
+    for dimension in &report.dimensions {
+        let ok = dimension.status == mim_labeling_compliance::LabelingComplianceStatus::Compliant;
+        print_dimension(
+            &format!("{:?}", dimension.dimension),
+            dimension.score,
+            &dimension.message,
+            ok,
+        );
+    }
+    if !report.is_fully_compliant {
+        process::exit(2);
+    }
+    Ok(())
+}
+
+fn print_dimension(name: &str, score: f64, message: &str, compliant: bool) {
+    let status = if compliant { "OK" } else { "FAIL" };
+    println!("  [{status}] {name}: {:.0}% — {message}", score * 100.0);
 }
