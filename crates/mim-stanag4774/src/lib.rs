@@ -17,9 +17,11 @@
 
 pub mod codec;
 pub mod json;
+pub mod xsd;
 pub mod xml;
 
 pub use codec::{Stanag4774Codec, Stanag4774Format};
+pub use xsd::validate_stanag4774_xsd;
 
 /// STANAG 4774 XML namespace URI.
 pub const NAMESPACE: &str = "urn:nato:stanag:4774:confidentialitymetadatalabel:1:0";

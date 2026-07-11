@@ -61,8 +61,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Imported manifest written to {}", output_path.display());
     println!(
-        "objects={} actions={} code_lists={} elements={}",
-        report.object_types, report.action_types, report.code_lists, report.total_elements
+        "objects={} actions={} code_lists={} attributes={} elements={}",
+        report.object_types,
+        report.action_types,
+        report.code_lists,
+        report.attribute_types,
+        report.total_elements
     );
 
     Ok(())

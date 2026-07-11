@@ -350,8 +350,26 @@ mod owl_xml {
     }
 
     fn normalize_ref(value: String) -> String {
-        value.trim().trim_start_matches('#').to_owned()
+        let trimmed = value.trim();
+        if let Some((_, local)) = trimmed.rsplit_once('#') {
+            return local.to_owned();
+        }
+        if let Some((_, local)) = trimmed.rsplit_once('/') {
+            return local.to_owned();
+        }
+        trimmed.trim_start_matches('#').to_owned()
     }
+}
+
+pub fn normalize_owl_ref(value: &str) -> String {
+    let trimmed = value.trim();
+    if let Some((_, local)) = trimmed.rsplit_once('#') {
+        return local.to_owned();
+    }
+    if let Some((_, local)) = trimmed.rsplit_once('/') {
+        return local.to_owned();
+    }
+    trimmed.trim_start_matches('#').to_owned()
 }
 
 #[cfg(test)]
@@ -404,5 +422,32 @@ mod tests {
         assert!(model.properties.contains_key("speed"));
         let produced = model.properties.get("producedTrack").expect("prop");
         assert_eq!(produced.domain.as_deref(), Some("ACTION-EVENT"));
+    }
+
+    #[test]
+    fn parses_full_uri_domain_and_range() {
+        const SAMPLE: &str = r##"<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">
+  <owl:Class rdf:about="http://example.org/ont#MilitaryConvoy"/>
+  <owl:DatatypeProperty rdf:about="http://example.org/ont#daySpeed">
+    <rdfs:domain rdf:resource="http://example.org/ont#MilitaryConvoy"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#decimal"/>
+  </owl:DatatypeProperty>
+</rdf:RDF>"##;
+        let model = OwlModel::parse_xml(SAMPLE).expect("parse");
+        let speed = model.properties.get("daySpeed").expect("property");
+        assert_eq!(speed.domain.as_deref(), Some("MilitaryConvoy"));
+        assert_eq!(speed.range.as_deref(), Some("decimal"));
+    }
+
+    #[test]
+    fn normalize_owl_ref_strips_uri_fragments() {
+        assert_eq!(
+            super::normalize_owl_ref("http://example.org/ont#ACTION-EVENT"),
+            "ACTION-EVENT"
+        );
+        assert_eq!(super::normalize_owl_ref("#REFERENCE"), "REFERENCE");
     }
 }

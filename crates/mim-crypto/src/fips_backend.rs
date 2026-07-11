@@ -2,7 +2,7 @@
 
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
 use aws_lc_rs::digest::{digest, SHA256};
-use aws_lc_rs::rand::SystemRandom;
+use aws_lc_rs::rand::{SecureRandom, SystemRandom};
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey};
 use rsa::pss::{Signature, SigningKey as PssSigningKey, VerifyingKey as PssVerifyingKey};
 use rsa::{Oaep, PublicKey, RsaPrivateKey, RsaPublicKey};

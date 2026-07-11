@@ -1,6 +1,7 @@
-use mim_labeling::{ConfidentialityLabel, LabelResult};
+use mim_labeling::{ConfidentialityLabel, LabelError, LabelResult};
 
 use crate::json;
+use crate::xsd;
 use crate::xml;
 
 /// Encoding format for STANAG 4774 labels.
@@ -36,6 +37,20 @@ impl Stanag4774Codec {
         data: &str,
         format: Stanag4774Format,
     ) -> LabelResult<ConfidentialityLabel> {
+        self.deserialize_with_options(data, format, true)
+    }
+
+    pub fn deserialize_with_options(
+        &self,
+        data: &str,
+        format: Stanag4774Format,
+        validate_xsd: bool,
+    ) -> LabelResult<ConfidentialityLabel> {
+        if validate_xsd && format == Stanag4774Format::Xml {
+            xsd::validate_stanag4774_xsd(data).map_err(|err| {
+                LabelError::Validation(format!("STANAG 4774 XSD validation failed: {err}"))
+            })?;
+        }
         let label = match format {
             Stanag4774Format::Xml => xml::deserialize(data)?,
             Stanag4774Format::JsonStructured => json::deserialize(data)?,
@@ -75,7 +90,13 @@ mod tests {
     fn xml_round_trip() {
         let codec = Stanag4774Codec::new();
         let restored = codec
-            .round_trip(&sample_label(), Stanag4774Format::Xml)
+            .deserialize_with_options(
+                &codec
+                    .serialize(&sample_label(), Stanag4774Format::Xml)
+                    .expect("serialize"),
+                Stanag4774Format::Xml,
+                true,
+            )
             .expect("round trip");
         assert_eq!(restored.classification, ClassificationLevel::Secret);
         assert_eq!(restored.releasable_countries(), vec!["USA", "GBR"]);

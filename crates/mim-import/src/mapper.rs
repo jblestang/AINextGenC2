@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use mim_core::{MimUri, SemanticId};
+use mim_core::{MimUri, RepresentationTerm, SemanticId};
 use mim_model::manifest::{MimManifest, ModelElementKind, ModelElementSpec};
 use indexmap::IndexMap;
 use mim_model::{ActionKind, CodeList, CodeValue, ObjectKind, TaxonomyNode};
@@ -50,6 +50,7 @@ pub struct ImportReport {
     pub object_types: usize,
     pub action_types: usize,
     pub code_lists: usize,
+    pub attribute_types: usize,
     pub total_elements: usize,
 }
 
@@ -133,14 +134,20 @@ impl OwlImporter {
             code_lists.push(list);
         }
 
+        let taxonomy_names: BTreeSet<String> = object_names
+            .iter()
+            .chain(action_names.iter())
+            .map(|name| to_pascal_case(name))
+            .collect();
+
         for (prop_name, property) in &owl.properties {
             if let Some(domain) = &property.domain {
-                let domain_name = to_pascal_case(domain.trim_start_matches('#'));
-                if taxonomy.iter().any(|n| n.name == domain_name) {
+                let domain_name = taxonomy_domain_name(domain, &taxonomy_names);
+                if domain_name.is_some() {
                     elements.push(property_to_element(
                         prop_name,
                         property,
-                        &domain_name,
+                        domain_name.as_ref().expect("domain"),
                         &options,
                     )?);
                 }
@@ -168,6 +175,11 @@ impl OwlImporter {
 
         append_synthetic_coverage(&mut manifest, &options);
 
+        let attribute_types = manifest
+            .elements
+            .iter()
+            .filter(|element| element.kind == ModelElementKind::Attribute)
+            .count();
         let report = ImportReport {
             object_types: manifest
                 .taxonomy
@@ -180,6 +192,7 @@ impl OwlImporter {
                 .filter(|n| n.is_action())
                 .count(),
             code_lists: manifest.code_lists.len(),
+            attribute_types,
             total_elements: manifest.elements.len(),
         };
 
@@ -447,7 +460,7 @@ fn property_to_element(
             .unwrap_or_else(|| format!("Imported property {}", display.clone())),
         parent_class: Some(parent_class.to_owned()),
         representation_term: if property.property_type == crate::owl::OwlPropertyKind::Data {
-            Some(mim_core::RepresentationTerm::Text)
+            Some(representation_term_for_range(property.range.as_deref()))
         } else {
             None
         },
@@ -529,6 +542,48 @@ fn semantic_id_for(key: &str) -> SemanticId {
     ))
 }
 
+fn taxonomy_domain_name(domain: &str, taxonomy_names: &BTreeSet<String>) -> Option<String> {
+    let candidates = [
+        to_pascal_case(domain),
+        to_pascal_case(&crate::owl::normalize_owl_ref(domain)),
+    ];
+    for candidate in candidates {
+        if taxonomy_names.contains(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+fn representation_term_for_range(range: Option<&str>) -> RepresentationTerm {
+    let Some(raw) = range else {
+        return RepresentationTerm::Text;
+    };
+    let normalized = crate::owl::normalize_owl_ref(raw).to_ascii_lowercase();
+    if normalized.contains("boolean") {
+        RepresentationTerm::Indicator
+    } else if normalized.contains("datetime") {
+        RepresentationTerm::DateTime
+    } else if normalized.contains("date") {
+        RepresentationTerm::Date
+    } else if normalized.contains("time") {
+        RepresentationTerm::Time
+    } else if normalized.contains("integer") || normalized.contains("int") {
+        RepresentationTerm::Numeric
+    } else if normalized.contains("decimal")
+        || normalized.contains("double")
+        || normalized.contains("float")
+    {
+        RepresentationTerm::Measure
+    } else if normalized.contains("duration") {
+        RepresentationTerm::Duration
+    } else if normalized.contains("anyuri") || normalized.contains("uri") {
+        RepresentationTerm::Identifier
+    } else {
+        RepresentationTerm::Text
+    }
+}
+
 fn to_pascal_case(raw: &str) -> String {
     let cleaned = raw.trim().trim_start_matches('#');
     let parts: Vec<&str> = cleaned
@@ -599,5 +654,34 @@ fn infer_action_kind(name: &str) -> Option<ActionKind> {
         Some(ActionKind::ActionResource)
     } else {
         Some(ActionKind::ActionObjective)
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod import_tests {
+    use super::*;
+    use crate::owl::OwlModel;
+
+    #[test]
+    fn imports_hundreds_of_attributes_from_bundled_jc3iedm() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/ontology/JC3IEDM.owl"
+        );
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let owl_data = std::fs::read_to_string(path).expect("read bundled owl");
+        let owl = OwlModel::parse_xml(&owl_data).expect("parse owl");
+        let importer = OwlImporter;
+        let (_manifest, report) = importer
+            .import(&owl, ImportOptions::default())
+            .expect("import");
+        assert!(
+            report.attribute_types >= 500,
+            "expected scale attribute import, got {}",
+            report.attribute_types
+        );
     }
 }

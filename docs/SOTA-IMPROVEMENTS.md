@@ -21,6 +21,8 @@ Summary of state-of-the-art hardening delivered on branch `cursor/sota-spif-dcs-
 
 - **Extended label model:** `alternative_labels`, `colour`, `marking_data`
 - **XML:** serialize/deserialize `alternativeConfidentialityLabel`, `Colour`, `MarkingData`
+- **XSD:** `crates/mim-stanag4774/schemas/stanag4774-label.xsd` + `validate_stanag4774_xsd()`
+- **Codec:** `deserialize_with_options(..., validate_xsd)` gates XML labels on schema validation
 
 ## STANAG 4778
 
@@ -30,17 +32,29 @@ Summary of state-of-the-art hardening delivered on branch `cursor/sota-spif-dcs-
 
 ## MIM full handling
 
-- **OWL:** `ObjectProperty` / `DatatypeProperty` with domain, range, labels; imported as manifest attributes
+- **OWL:** `ObjectProperty` / `DatatypeProperty` with domain, range, labels; URI normalization for JC3IEDM
 - **Metadata taxonomy:** Reporter, Observer, OperationalAppraisal, ValidityPeriod, SecurityClassification in `mim-core-5.1.json`
-- **Full manifest load:** merges metadata from core seed when loading `mim-full-5.1.json`
+- **Full manifest:** `models/mim-full-5.1.json` regenerated from bundled `models/ontology/JC3IEDM.owl` (**820 attributes**)
+- **Import fallback:** mimworld → DISO mirror → bundled OWL (`--source bundled:jc3iedm`)
 - **Compliance:** metadata dimension requires 5 subtypes + element coverage
+
+## Follow-up deliverables
+
+- STANAG 4774 label XSD validation
+- Regenerated full manifest with OWL property import at scale
+- Bundled JC3IEDM OWL for offline/reproducible import
+- FIPS build on Rust 1.85 (`rust-toolchain.toml`, `mim-crypto` FIPS fix)
+- Updated [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md)
 
 ## Verification
 
 ```bash
 cargo test --workspace
 cargo test -p mim-spif
-cargo test -p mim-dcs
+cargo test -p mim-stanag4774
+cargo test -p mim-crypto --features fips
+cargo run -p mim-import -- --source bundled:jc3iedm \
+  --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 cargo run -p ainextgenc2 -- --labeling
 cargo run -p ainextgenc2 -- --adatp
 ```
