@@ -1,5 +1,9 @@
 use std::fs;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 const ISO_29008_2011_XSD: &str = include_str!("../schemas/spif-iso29008-2011.xsd");
 const XMLSPIF_XSD: &str = include_str!("../schemas/xmlspif.xsd");
@@ -49,9 +53,9 @@ fn validate_with_xmllint(xml: &str, schema: &str) -> Result<(), String> {
         return Err("xmllint not available".into());
     }
 
-    let stamp = format!("{:?}", std::time::SystemTime::now());
-    let xml_path = std::env::temp_dir().join(format!("spif-{stamp}.xml"));
-    let xsd_path = std::env::temp_dir().join(format!("spif-{stamp}.xsd"));
+    let stamp = unique_temp_stem();
+    let xml_path = std::env::temp_dir().join(format!("{stamp}.xml"));
+    let xsd_path = std::env::temp_dir().join(format!("{stamp}.xsd"));
 
     fs::write(&xml_path, xml).map_err(|e| e.to_string())?;
     fs::write(&xsd_path, schema).map_err(|e| e.to_string())?;
@@ -73,6 +77,15 @@ fn validate_with_xmllint(xml: &str, schema: &str) -> Result<(), String> {
         let stderr = String::from_utf8_lossy(&output.stderr);
         Err(format!("xmllint schema validation failed: {}", stderr.trim()))
     }
+}
+
+fn unique_temp_stem() -> String {
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let seq = TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("mim-spif-{}-{}-{}", std::process::id(), seq, nanos)
 }
 
 fn xmllint_available() -> bool {

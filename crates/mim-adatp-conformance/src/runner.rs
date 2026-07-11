@@ -281,12 +281,15 @@ impl AdatpConformanceRunner {
         ];
         let mut tests = Vec::new();
         for (id, xml) in fixtures {
-            let load_ok = registry.load_xml(xml).is_ok();
+            let load_result = registry.load_xml(xml);
             tests.push(AdatpTestResult {
                 id: format!("spif-load-{id}"),
                 suite: "XML-SPIF".into(),
-                passed: load_ok,
-                message: format!("SPIF policy {id} ingested"),
+                passed: load_result.is_ok(),
+                message: match load_result {
+                    Ok(()) => format!("SPIF policy {id} ingested"),
+                    Err(err) => format!("SPIF policy {id} load failed: {err}"),
+                },
             });
         }
         let validator = mim_spif::SpifValidator::new(registry);

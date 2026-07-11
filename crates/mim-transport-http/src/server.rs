@@ -28,11 +28,18 @@ impl HttpExchangeConfig {
             trust_store: NmbTrustStore::from_verifying_keys([kp.verifying_key().clone()]),
         })
     }
+
+    /// Production trust store from `MIM_NMB_TRUST`, or conformance when `MIM_CONFORMANCE_KEYS=1`.
+    pub fn from_env() -> mim_crypto::CryptoResult<Self> {
+        Ok(Self {
+            trust_store: mim_crypto::load_trust_store()?,
+        })
+    }
 }
 
 impl Default for HttpExchangeConfig {
     fn default() -> Self {
-        Self::conformance().expect("conformance trust store")
+        Self::from_env().expect("configure MIM_NMB_TRUST or set MIM_CONFORMANCE_KEYS=1")
     }
 }
 
@@ -72,39 +79,68 @@ impl HttpExchangeServer {
     }
 
     pub async fn serve(self, broker: SecuredExchangeBroker) -> Result<(), String> {
-        let config = build_server_config(&self.tls, self.client_ca.as_deref())?;
-        let acceptor = TlsAcceptor::from(Arc::new(config));
         let listener = TcpListener::bind(self.addr)
             .await
             .map_err(|e| e.to_string())?;
+        let (acceptor, app) = self.build_runtime(broker)?;
+        accept_loop(listener, acceptor, app).await
+    }
 
+    /// Start HTTPS server on an ephemeral port; returns bound address and background task.
+    pub async fn serve_ephemeral(
+        self,
+        broker: SecuredExchangeBroker,
+    ) -> Result<(SocketAddr, tokio::task::JoinHandle<()>), String> {
+        let listener = TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0)))
+            .await
+            .map_err(|e| e.to_string())?;
+        let addr = listener.local_addr().map_err(|e| e.to_string())?;
+        let (acceptor, app) = self.build_runtime(broker)?;
+        let handle = tokio::spawn(async move {
+            let _ = accept_loop(listener, acceptor, app).await;
+        });
+        Ok((addr, handle))
+    }
+
+    fn build_runtime(
+        self,
+        broker: SecuredExchangeBroker,
+    ) -> Result<(TlsAcceptor, axum::Router), String> {
+        let config = build_server_config(&self.tls, self.client_ca.as_deref())?;
+        let acceptor = TlsAcceptor::from(Arc::new(config));
         let state = AppState {
             broker: Arc::new(Mutex::new(broker)),
             trust_store: self.config.trust_store.clone(),
         };
-        let app = routes::exchange_router(state);
+        Ok((acceptor, routes::exchange_router(state)))
+    }
+}
 
-        loop {
-            let (stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
-            let acceptor = acceptor.clone();
-            let app = app.clone();
-            tokio::spawn(async move {
-                let stream = match acceptor.accept(stream).await {
-                    Ok(tls_stream) => tls_stream,
-                    Err(_) => return,
-                };
-                let io = hyper_util::rt::TokioIo::new(stream);
-                let hyper_service =
-                    hyper::service::service_fn(move |request| app.clone().call(request));
-                if hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
-                    .serve_connection(io, hyper_service)
-                    .await
-                    .is_err()
-                {
-                    // Connection closed.
-                }
-            });
-        }
+async fn accept_loop(
+    listener: TcpListener,
+    acceptor: TlsAcceptor,
+    app: axum::Router,
+) -> Result<(), String> {
+    loop {
+        let (stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
+        let acceptor = acceptor.clone();
+        let app = app.clone();
+        tokio::spawn(async move {
+            let stream = match acceptor.accept(stream).await {
+                Ok(tls_stream) => tls_stream,
+                Err(_) => return,
+            };
+            let io = hyper_util::rt::TokioIo::new(stream);
+            let hyper_service =
+                hyper::service::service_fn(move |request| app.clone().call(request));
+            if hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
+                .serve_connection(io, hyper_service)
+                .await
+                .is_err()
+            {
+                // Connection closed.
+            }
+        });
     }
 }
 

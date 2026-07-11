@@ -23,6 +23,7 @@ mod hash;
 mod keys;
 mod pki;
 mod provider;
+mod runtime_pki;
 mod symmetric;
 
 #[cfg(all(feature = "ring-backend", not(feature = "fips")))]
@@ -35,6 +36,10 @@ pub use error::{CryptoError, CryptoResult};
 pub use hash::{sha256, sha256_base64};
 pub use keys::{conformance_keypair, KeyPair, PublicKey, SigningKey, VerifyingKey};
 pub use pki::{NmbKeyRing, NmbTrustStore};
+pub use runtime_pki::{
+    conformance_keys_enabled, load_key_ring, load_trust_store, ENV_CONFORMANCE_KEYS,
+    ENV_KAS_SIGNING_KEY, ENV_NMB_SIGNING_KEY, ENV_NMB_TRUST,
+};
 pub use provider::{
     sign_nmb_binding, verify_nmb_binding, CryptoProvider, selected_provider, NMBS_ALGORITHM,
     NMBS_ALGORITHM_URI,

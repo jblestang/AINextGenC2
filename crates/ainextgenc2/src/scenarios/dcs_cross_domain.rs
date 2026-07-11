@@ -1,7 +1,7 @@
 //! Cross-domain DCS scenario: labeled MIM radar exchange across security domains.
 
 use mim_audit::{forward_siem_to_file, AuditLog};
-use mim_crypto::conformance_keypair;
+use mim_crypto::load_key_ring;
 use mim_dcs::{
     bundled_config_path, CrossDomainGuard, CrossDomainTransfer, DcsConfig, GuardDecision,
     LabeledMimExchange, TransferOutcome,
@@ -68,7 +68,7 @@ impl DcsCrossDomainScenario {
 
     pub fn run(&self, stack: &MimStack) -> mim_core::MimResult<DcsScenarioOutput> {
         let config = self.config();
-        let keys = conformance_keypair().map_err(|e| mim_core::MimError::Validation(e.to_string()))?;
+        let ring = load_key_ring().map_err(|e| mim_core::MimError::Validation(e.to_string()))?;
         let registry = stack.registry();
         let radar_store = AirDefenseRadarScenario::demo().build_store(registry)?;
 
@@ -77,16 +77,16 @@ impl DcsCrossDomainScenario {
             &radar_store,
             &serializer,
             &self.label,
-            keys.signing_key(),
-            keys.verifying_key(),
-            keys.verifying_key(),
+            ring.nmb_signing(),
+            ring.nmb_verifying(),
+            ring.kas_verifying(),
             true,
         )?;
 
         let inbound_binding = BindingDataObject::assertion_bound(
             self.label.clone(),
             labeled.mim_json.as_bytes(),
-            keys.signing_key(),
+            ring.nmb_signing(),
         )?;
 
         let transfer = CrossDomainTransfer {
@@ -95,17 +95,17 @@ impl DcsCrossDomainScenario {
             label: self.label.clone(),
             payload: labeled.mim_json.clone(),
             inbound_binding,
-            nmb_signing_key: keys.signing_key().clone(),
-            nmb_verifying_key: keys.verifying_key().clone(),
-            kas_signing_key: keys.signing_key().clone(),
-            kas_verifying_key: keys.verifying_key().clone(),
+            nmb_signing_key: ring.nmb_signing().clone(),
+            nmb_verifying_key: ring.nmb_verifying().clone(),
+            kas_signing_key: ring.kas_signing().clone(),
+            kas_verifying_key: ring.kas_verifying().clone(),
         };
 
         let audit = config
             .build_audit_log()
             .map_err(|e| mim_core::MimError::Validation(e))?
             .unwrap_or_else(|| AuditLog::memory())
-            .with_signing_key(keys.signing_key().clone());
+            .with_signing_key(ring.nmb_signing().clone());
         let guard = self
             .guard
             .clone()
@@ -160,6 +160,7 @@ mod tests {
 
     #[test]
     fn dcs_scenario_downgrades_and_releases() {
+        std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
         let stack = MimStack::load().expect("stack");
         let output = DcsCrossDomainScenario::demo().run(&stack).expect("run");
         assert_eq!(output.transfer_decision, "DOWNGRADE");
