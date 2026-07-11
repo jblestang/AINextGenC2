@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::error::{TransportError, TransportResult};
+use crate::filter::parse_filter;
 use crate::message::{
     DeleteObjectRequest, GetByFilterRequest, GetByOidRequest, IesOperation, PutObjectRequest,
 };
@@ -10,6 +11,7 @@ pub mod paths {
     pub const API_VERSION: &str = "v1";
     pub const BASE: &str = "/mip4-ies/v1";
     pub const OBJECTS: &str = "/mip4-ies/v1/objects";
+    pub const SYNC: &str = "/mip4-ies/v1/sync";
 }
 
 /// HTTP methods mapped to MIP4-IES operations.
@@ -58,6 +60,11 @@ pub fn parse_route(method: HttpMethod, path: &str) -> TransportResult<RestRoute>
                 operation: IesOperation::DeleteObject,
             })
         }
+        HttpMethod::Get if normalized == paths::SYNC => Ok(RestRoute {
+            method,
+            path: normalized,
+            operation: IesOperation::Sync,
+        }),
         _ => Err(TransportError::Unsupported(format!(
             "no MIP4-IES route for {method:?} {path}"
         ))),
@@ -77,9 +84,27 @@ pub fn oid_from_path(path: &str) -> TransportResult<String> {
         })
 }
 
-/// Build REST path for GetByOID / DeleteObject.
+/// Percent-encode an OID for use in REST path segments (`urn:uuid:…` → safe path token).
+pub fn encode_oid_for_path(oid: &str) -> String {
+    let mut encoded = String::with_capacity(oid.len() + 8);
+    for byte in oid.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                encoded.push(byte as char);
+            }
+            _ => {
+                encoded.push('%');
+                encoded.push(char::from(b"0123456789ABCDEF"[(byte >> 4) as usize]));
+                encoded.push(char::from(b"0123456789ABCDEF"[(byte & 0x0f) as usize]));
+            }
+        }
+    }
+    encoded
+}
+
+/// Build REST path for GetByOID / DeleteObject with URL-encoded OID.
 pub fn object_path(oid: &str) -> String {
-    format!("{}/{}", paths::OBJECTS, oid)
+    format!("{}/{}", paths::OBJECTS, encode_oid_for_path(oid))
 }
 
 /// Deserialize a PutObject body from JSON.
@@ -94,21 +119,39 @@ pub fn parse_filter_body(body: &str) -> TransportResult<GetByFilterRequest> {
 
 /// Build a GetByFilter request from query parameters.
 pub fn filter_from_query(
+    filter: Option<&str>,
     class_name: Option<&str>,
     property_name: Option<&str>,
     property_value: Option<&str>,
+    limit: Option<usize>,
+    offset: Option<usize>,
 ) -> TransportResult<GetByFilterRequest> {
+    if let Some(expression) = filter.filter(|value| !value.is_empty()) {
+        parse_filter(expression)?;
+        return Ok(GetByFilterRequest {
+            filter: Some(expression.to_owned()),
+            class_name: String::new(),
+            property_name: None,
+            property_value: None,
+            limit,
+            offset,
+        });
+    }
+
     let class_name = class_name
         .filter(|value| !value.is_empty())
         .ok_or_else(|| {
-            TransportError::InvalidRequest("className query parameter is required".into())
+            TransportError::InvalidRequest("filter or className query parameter is required".into())
         })?
         .to_owned();
 
     Ok(GetByFilterRequest {
+        filter: None,
         class_name,
         property_name: property_name.map(str::to_owned),
         property_value: property_value.map(str::to_owned),
+        limit,
+        offset,
     })
 }
 
@@ -155,7 +198,7 @@ mod tests {
     fn builds_object_path() {
         assert_eq!(
             object_path("urn:uuid:abc"),
-            "/mip4-ies/v1/objects/urn:uuid:abc"
+            "/mip4-ies/v1/objects/urn%3Auuid%3Aabc"
         );
     }
 }

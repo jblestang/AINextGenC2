@@ -73,15 +73,21 @@ impl TransportExchangeScenario {
 
         let targets = secured.get_by_filter(GetByFilterRequest {
             class_name: "Target".into(),
+            filter: None,
             property_name: None,
             property_value: None,
+            limit: None,
+            offset: None,
         })?;
         let target_count = targets.count;
 
         let hostile = secured.get_by_filter(GetByFilterRequest {
             class_name: "Target".into(),
-            property_name: Some("nameText".into()),
-            property_value: Some("HOSTILE-1".into()),
+            filter: Some("//Target[@nameText='HOSTILE-1']".into()),
+            property_name: None,
+            property_value: None,
+            limit: None,
+            offset: None,
         })?;
 
         let hostile_track = hostile

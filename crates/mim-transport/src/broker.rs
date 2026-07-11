@@ -5,9 +5,11 @@ use mim_model::ModelRegistry;
 use mim_runtime::{MimInstance, ObjectIdentifier, SerializationFormat, Serializer, Validator};
 
 use crate::error::{TransportError, TransportResult};
+use crate::filter::{instance_matches, parse_filter};
 use crate::message::{
     DeleteObjectRequest, DeleteObjectResponse, GetByFilterRequest, GetByFilterResponse,
-    GetByOidRequest, GetByOidResponse, PutObjectRequest, PutObjectResponse,
+    GetByOidRequest, GetByOidResponse, IesOperation, JournalEntry, PutObjectRequest,
+    PutObjectResponse, SyncResponse,
 };
 
 /// In-memory MIP4-IES exchange broker backing the REST service interface.
@@ -16,6 +18,9 @@ pub struct ExchangeBroker {
     registry: ModelRegistry,
     store: IndexMap<ObjectIdentifier, MimInstance>,
     inactive: HashSet<ObjectIdentifier>,
+    journal: Vec<JournalEntry>,
+    sequence: u64,
+    applied_sequence: u64,
 }
 
 impl ExchangeBroker {
@@ -24,6 +29,104 @@ impl ExchangeBroker {
             registry,
             store: IndexMap::new(),
             inactive: HashSet::new(),
+            journal: Vec::new(),
+            sequence: 0,
+            applied_sequence: 0,
+        }
+    }
+
+    pub fn from_snapshot(
+        registry: ModelRegistry,
+        instances: Vec<MimInstance>,
+        inactive: Vec<ObjectIdentifier>,
+        journal: Vec<JournalEntry>,
+        sequence: u64,
+        applied_sequence: u64,
+    ) -> Self {
+        let store = instances
+            .into_iter()
+            .map(|instance| (instance.oid.clone(), instance))
+            .collect();
+        Self {
+            registry,
+            store,
+            inactive: inactive.into_iter().collect(),
+            journal,
+            sequence,
+            applied_sequence,
+        }
+    }
+
+    pub fn last_applied_sequence(&self) -> u64 {
+        self.applied_sequence
+    }
+
+    pub fn store_get(&self, oid: &ObjectIdentifier) -> Option<&MimInstance> {
+        self.store.get(oid)
+    }
+
+    pub fn store_contains(&self, oid: &ObjectIdentifier) -> bool {
+        self.store.contains_key(oid)
+    }
+
+    pub fn apply_entry_from(
+        &mut self,
+        publisher: &ExchangeBroker,
+        entry: &JournalEntry,
+    ) -> TransportResult<()> {
+        match entry.operation {
+            IesOperation::PutObject => {
+                let instance = publisher
+                    .store_get(&entry.oid)
+                    .cloned()
+                    .ok_or_else(|| TransportError::NotFound(entry.oid.to_string()))?;
+                self.put_object(PutObjectRequest { instance })?;
+            }
+            IesOperation::DeleteObject => {
+                if publisher.store_contains(&entry.oid) {
+                    let _ = self.delete_object(DeleteObjectRequest {
+                        oid: entry.oid.clone(),
+                    });
+                }
+            }
+            IesOperation::GetByOid | IesOperation::GetByFilter | IesOperation::Sync => {
+                return Err(TransportError::Unsupported(format!(
+                    "journal operation {:?} is not replicable",
+                    entry.operation
+                )));
+            }
+        }
+
+        self.applied_sequence = entry.sequence;
+        Ok(())
+    }
+
+    pub fn instances(&self) -> impl Iterator<Item = &MimInstance> {
+        self.store.values()
+    }
+
+    pub fn inactive_oids(&self) -> impl Iterator<Item = &ObjectIdentifier> {
+        self.inactive.iter()
+    }
+
+    pub fn journal(&self) -> &[JournalEntry] {
+        &self.journal
+    }
+
+    pub fn latest_sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    pub fn sync_since(&self, since: u64) -> SyncResponse {
+        let entries: Vec<JournalEntry> = self
+            .journal
+            .iter()
+            .filter(|entry| entry.sequence > since)
+            .cloned()
+            .collect();
+        SyncResponse {
+            latest_sequence: self.sequence,
+            entries,
         }
     }
 
@@ -48,6 +151,9 @@ impl ExchangeBroker {
 
     /// PutObject — publish or update a MIM instance.
     pub fn put_object(&mut self, request: PutObjectRequest) -> TransportResult<PutObjectResponse> {
+        mim_runtime::validate_serialized_instance(&request.instance)
+            .map_err(|e| TransportError::Validation(e))?;
+
         let validator = Validator::new(&self.registry);
         let report = validator.validate_instance(&request.instance);
         if !report.is_valid() {
@@ -61,6 +167,7 @@ impl ExchangeBroker {
         let created = !self.store.contains_key(&oid);
         self.store.insert(oid.clone(), request.instance);
         self.inactive.remove(&oid);
+        self.record_journal(IesOperation::PutObject, oid.clone());
 
         Ok(PutObjectResponse { oid, created })
     }
@@ -85,9 +192,29 @@ impl ExchangeBroker {
         &self,
         request: GetByFilterRequest,
     ) -> TransportResult<GetByFilterResponse> {
+        if let Some(expression) = request.filter.as_deref() {
+            let filter = parse_filter(expression)?;
+            let instances: Vec<MimInstance> = self
+                .store
+                .values()
+                .filter(|instance| !self.inactive.contains(&instance.oid))
+                .filter(|instance| instance_matches(instance, &filter))
+                .cloned()
+                .collect();
+            let count = instances.len();
+            let total = count;
+            let instances = paginate_instances(instances, request.offset, request.limit);
+            let count = instances.len();
+            return Ok(GetByFilterResponse {
+                instances,
+                count,
+                total,
+            });
+        }
+
         if request.class_name.trim().is_empty() {
             return Err(TransportError::InvalidRequest(
-                "className filter must not be empty".into(),
+                "className or filter query parameter is required".into(),
             ));
         }
 
@@ -109,8 +236,14 @@ impl ExchangeBroker {
             .cloned()
             .collect();
 
+        let total = instances.len();
+        let instances = paginate_instances(instances, request.offset, request.limit);
         let count = instances.len();
-        Ok(GetByFilterResponse { instances, count })
+        Ok(GetByFilterResponse {
+            instances,
+            count,
+            total,
+        })
     }
 
     /// DeleteObject — soft-delete (mark inactive per MIP4-IES semantics).
@@ -123,10 +256,20 @@ impl ExchangeBroker {
         }
 
         let deleted = self.inactive.insert(request.oid.clone());
+        self.record_journal(IesOperation::DeleteObject, request.oid.clone());
         Ok(DeleteObjectResponse {
             oid: request.oid,
             deleted,
         })
+    }
+
+    fn record_journal(&mut self, operation: IesOperation, oid: ObjectIdentifier) {
+        self.sequence = self.sequence.saturating_add(1);
+        self.journal.push(JournalEntry {
+            sequence: self.sequence,
+            operation,
+            oid,
+        });
     }
 
     /// Publish an entire instance store via PutObject (bulk load).
@@ -153,6 +296,19 @@ impl ExchangeBroker {
         serializer
             .serialize_store(&store, SerializationFormat::Json)
             .map_err(TransportError::from)
+    }
+}
+
+pub(crate) fn paginate_instances(
+    instances: Vec<MimInstance>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Vec<MimInstance> {
+    let offset = offset.unwrap_or(0);
+    let sliced: Vec<MimInstance> = instances.into_iter().skip(offset).collect();
+    match limit {
+        Some(limit) => sliced.into_iter().take(limit).collect(),
+        None => sliced,
     }
 }
 
@@ -218,6 +374,29 @@ mod tests {
     }
 
     #[test]
+    fn filter_by_xpath_expression() {
+        let mut broker = ExchangeBroker::new(test_registry());
+        let instance = target_instance("HOSTILE-1");
+        broker
+            .put_object(PutObjectRequest {
+                instance: instance.clone(),
+            })
+            .expect("put");
+
+        let filtered = broker
+            .get_by_filter(GetByFilterRequest {
+                filter: Some("//Target[@nameText='HOSTILE-1']".into()),
+                class_name: String::new(),
+                property_name: None,
+                property_value: None,
+                limit: None,
+                offset: None,
+            })
+            .expect("filter");
+        assert_eq!(filtered.count, 1);
+    }
+
+    #[test]
     fn put_get_filter_delete_lifecycle() {
         let mut broker = ExchangeBroker::new(test_registry());
         let instance = target_instance("HOSTILE-1");
@@ -238,8 +417,11 @@ mod tests {
         let filtered = broker
             .get_by_filter(GetByFilterRequest {
                 class_name: "Target".into(),
+                filter: None,
                 property_name: Some("nameText".into()),
                 property_value: Some("HOSTILE-1".into()),
+                limit: None,
+                offset: None,
             })
             .expect("filter");
         assert_eq!(filtered.count, 1);

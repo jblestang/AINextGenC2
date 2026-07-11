@@ -9,6 +9,7 @@ pub enum IesOperation {
     GetByOid,
     GetByFilter,
     DeleteObject,
+    Sync,
 }
 
 /// PutObject — publish or update a MIM instance.
@@ -42,11 +43,19 @@ pub struct GetByOidResponse {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetByFilterRequest {
+    /// MIP4-IES XPath-like filter (`//ClassName[@prop='value']`). Preferred for FMN REST binding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(default)]
     pub class_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub property_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub property_value: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub offset: Option<usize>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -54,6 +63,7 @@ pub struct GetByFilterRequest {
 pub struct GetByFilterResponse {
     pub instances: Vec<MimInstance>,
     pub count: usize,
+    pub total: usize,
 }
 
 /// DeleteObject — mark an instance inactive (MIP4-IES soft delete).
@@ -68,6 +78,23 @@ pub struct DeleteObjectRequest {
 pub struct DeleteObjectResponse {
     pub oid: ObjectIdentifier,
     pub deleted: bool,
+}
+
+/// Replication journal entry for peer sync (MIP4-IES change notification).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JournalEntry {
+    pub sequence: u64,
+    pub operation: IesOperation,
+    pub oid: ObjectIdentifier,
+}
+
+/// Sync response for `GET /mip4-ies/v1/sync?since=N`.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncResponse {
+    pub latest_sequence: u64,
+    pub entries: Vec<JournalEntry>,
 }
 
 /// Wire envelope for MIP4-IES exchange messages.

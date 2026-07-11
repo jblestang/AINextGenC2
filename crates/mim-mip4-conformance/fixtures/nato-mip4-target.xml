@@ -1,0 +1,5 @@
+<Target xmlns:mim="https://www.mimworld.org/mim/exchange"
+        oid="urn:uuid:nato-fixture-target-001"
+        semanticId="aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa">
+  <nameText>"HOSTILE-NATO-1"</nameText>
+</Target>

@@ -3,6 +3,7 @@ use std::process;
 
 use ainextgenc2::MimStack;
 use mim_adatp_conformance::AdatpConformanceRunner;
+use mim_mip4_conformance::Mip4ConformanceRunner;
 use mim_compliance::ComplianceDimension;
 use mim_labeling_compliance::LabelingComplianceChecker;
 
@@ -17,7 +18,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let labeling_only = args.iter().any(|a| a == "--labeling");
     let adatp_only = args.iter().any(|a| a == "--adatp");
+    let mip4_only = args.iter().any(|a| a == "--mip4");
     let path = args.get(1).filter(|a| !a.starts_with("--")).map(String::as_str);
+
+    if mip4_only {
+        return run_mip4_conformance();
+    }
 
     if adatp_only {
         return run_adatp_conformance();
@@ -132,6 +138,70 @@ fn run_labeling_compliance() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
     if !report.is_fully_compliant {
+        process::exit(2);
+    }
+    Ok(())
+}
+
+fn run_mip4_conformance() -> Result<(), Box<dyn std::error::Error>> {
+    use mim_mip4_conformance::{ACCREDITATION_THRESHOLD, Mip4ConformanceRunner};
+
+    let report = Mip4ConformanceRunner::new().evaluate();
+    println!("MIP4-IES Conformance (FMN accreditation path)");
+    println!("==============================================");
+    println!(
+        "Overall: {:.1}% — {}/{} tests ({})",
+        report.overall_score * 100.0,
+        report.total_passed(),
+        report.total_tests(),
+        if report.is_fully_compliant {
+            "FULLY COMPLIANT"
+        } else {
+            "NOT YET COMPLIANT"
+        }
+    );
+    println!(
+        "Accreditation threshold: {:.0}% per dimension — {}",
+        ACCREDITATION_THRESHOLD * 100.0,
+        if report.meets_accreditation_threshold {
+            "MET"
+        } else {
+            "NOT MET"
+        }
+    );
+    println!();
+    println!("Dimensions:");
+    for dimension in &report.dimensions {
+        let status = if dimension.is_accredited() { "OK" } else { "FAIL" };
+        println!(
+            "  [{status}] {:?}: {:.0}% — {}",
+            dimension.dimension,
+            dimension.score * 100.0,
+            dimension.message
+        );
+    }
+    println!();
+    for suite in &report.suites {
+        let status = if suite.failed == 0 { "OK" } else { "FAIL" };
+        println!(
+            "  [{status}] {}: {}/{} passed",
+            suite.name, suite.passed, suite.total
+        );
+        for test in &suite.tests {
+            if !test.passed {
+                let test_status = if test.passed { "pass" } else { "FAIL" };
+                println!("      [{test_status}] {} — {}", test.id, test.message);
+            }
+        }
+    }
+    if !report.recommendations.is_empty() {
+        println!();
+        println!("Recommendations:");
+        for (idx, item) in report.recommendations.iter().enumerate() {
+            println!("  {}. {item}", idx + 1);
+        }
+    }
+    if !report.meets_accreditation_threshold {
         process::exit(2);
     }
     Ok(())

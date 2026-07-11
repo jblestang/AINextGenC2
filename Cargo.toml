@@ -13,6 +13,7 @@ members = [
     "crates/mim-dcs",
     "crates/mim-labeling-compliance",
     "crates/mim-adatp-conformance",
+    "crates/mim-mip4-conformance",
     "crates/mim-transport",
     "crates/mim-policy",
     "crates/mim-crypto",
@@ -43,6 +44,7 @@ mim-ztdf = { path = "crates/mim-ztdf" }
 mim-dcs = { path = "crates/mim-dcs" }
 mim-labeling-compliance = { path = "crates/mim-labeling-compliance" }
 mim-adatp-conformance = { path = "crates/mim-adatp-conformance" }
+mim-mip4-conformance = { path = "crates/mim-mip4-conformance" }
 mim-transport = { path = "crates/mim-transport" }
 mim-policy = { path = "crates/mim-policy" }
 mim-crypto = { path = "crates/mim-crypto" }
