@@ -41,6 +41,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let owl = OwlModel::parse_xml(&owl_data)?;
     let mut options = ImportOptions::default();
+    options.owl_xml = Some(owl_data);
     if source.as_deref() == Some("mimworld") || source.as_deref() == Some("mimworld:jc3iedm") {
         options.authoritative_mimworld = true;
         options.description = "Imported from mimworld.org JC3IEDM OWL (authoritative MIP source)".into();
@@ -51,6 +52,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let importer = OwlImporter;
+    let coverage_target = options.target_owl_attribute_coverage;
     let (manifest, report) = importer.import(&owl, options)?;
 
     let json = serde_json::to_string_pretty(&manifest)?;
@@ -67,6 +69,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         report.code_lists,
         report.attribute_types,
         report.total_elements
+    );
+    println!(
+        "owl_properties={} xml_tag_lines={} with_domain={} imported={} skipped={} coverage={:.1}% target={:.0}% ({})",
+        report.owl_properties_total,
+        report.owl_properties_referenced,
+        report.owl_properties_with_domain,
+        report.owl_properties_imported,
+        report.owl_properties_skipped,
+        report.owl_attribute_coverage_ratio * 100.0,
+        coverage_target * 100.0,
+        if report.meets_owl_coverage_target {
+            "MET"
+        } else {
+            "BELOW TARGET"
+        }
     );
 
     Ok(())

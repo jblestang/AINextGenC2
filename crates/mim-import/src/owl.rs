@@ -26,6 +26,7 @@ pub struct OwlProperty {
     pub domain: Option<String>,
     pub range: Option<String>,
     pub parents: Vec<String>,
+    pub inverse_of: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -38,6 +39,34 @@ pub enum OwlPropertyKind {
 impl OwlModel {
     pub fn parse_xml(data: &str) -> MimResult<Self> {
         owl_xml::parse(data)
+    }
+
+    /// Count OWL property XML tag lines (opening + closing; diagnostic only).
+    pub fn count_xml_property_tag_lines(data: &str) -> usize {
+        data.lines()
+            .filter(|line| line.contains("ObjectProperty") || line.contains("DatatypeProperty"))
+            .count()
+    }
+
+    /// Properties with a resolved `domain` value.
+    pub fn properties_with_domain_count(&self) -> usize {
+        self.properties
+            .values()
+            .filter(|property| property.domain.is_some())
+            .count()
+    }
+
+    /// Iteratively resolve missing domains via inverse and sub-property inheritance.
+    pub fn resolve_property_domains(&mut self) {
+        loop {
+            let before = self.properties_with_domain_count();
+            self.resolve_inverse_domains();
+            self.resolve_subproperty_domains();
+            let after = self.properties_with_domain_count();
+            if after == before {
+                break;
+            }
+        }
     }
 
     pub fn class_names(&self) -> impl Iterator<Item = &String> {
@@ -56,6 +85,89 @@ impl OwlModel {
             }
         }
         result
+    }
+
+    /// Walk OWL `subClassOf` parents from `class_name` upward (cycle-safe).
+    pub fn ancestors_of(&self, class_name: &str) -> Vec<String> {
+        let mut ancestors = Vec::new();
+        let mut enqueued = BTreeSet::from([class_name.to_owned()]);
+        let mut queue = vec![class_name.to_owned()];
+
+        while let Some(current) = queue.pop() {
+            let Some(class) = self.classes.get(&current) else {
+                continue;
+            };
+            for parent in &class.parents {
+                if enqueued.insert(parent.clone()) {
+                    ancestors.push(parent.clone());
+                    queue.push(parent.clone());
+                }
+            }
+        }
+        ancestors
+    }
+
+    /// Fill missing property domains/ranges from `owl:inverseOf` partners.
+    pub fn resolve_inverse_domains(&mut self) {
+        let updates: Vec<(String, Option<String>, Option<String>)> = self
+            .properties
+            .iter()
+            .filter_map(|(_name, property)| {
+                property.inverse_of.as_ref().map(|partner| {
+                    (
+                        partner.clone(),
+                        property.range.clone(),
+                        property.domain.clone(),
+                    )
+                })
+            })
+            .collect();
+
+        for (partner, domain, range) in updates {
+            let entry = self.properties.entry(partner).or_insert_with(|| OwlProperty {
+                name: "unknown".into(),
+                ..OwlProperty::default()
+            });
+            if entry.domain.is_none() {
+                entry.domain = domain;
+            }
+            if entry.range.is_none() {
+                entry.range = range;
+            }
+        }
+    }
+
+    /// Inherit domain/range from `rdfs:subPropertyOf` parents.
+    pub fn resolve_subproperty_domains(&mut self) {
+        let mut inheritance = Vec::new();
+        for (name, property) in &self.properties {
+            for parent_name in &property.parents {
+                if let Some(parent) = self.properties.get(parent_name) {
+                    inheritance.push((
+                        name.clone(),
+                        parent.domain.clone(),
+                        parent.range.clone(),
+                        parent.property_type,
+                    ));
+                }
+            }
+        }
+
+        for (name, domain, range, kind) in inheritance {
+            let entry = self.properties.entry(name).or_insert_with(|| OwlProperty {
+                name: "unknown".into(),
+                ..OwlProperty::default()
+            });
+            if entry.domain.is_none() {
+                entry.domain = domain;
+            }
+            if entry.range.is_none() {
+                entry.range = range;
+            }
+            if entry.property_type == OwlPropertyKind::Object && kind == OwlPropertyKind::Data {
+                entry.property_type = kind;
+            }
+        }
     }
 }
 
@@ -185,6 +297,17 @@ mod owl_xml {
                     }
                 }
             }
+            "inverseOf" => {
+                if let (Some(child), Some(partner)) =
+                    (state.current_property.clone(), resource_ref(e))
+                {
+                    let entry = model.properties.entry(child.clone()).or_insert_with(|| super::OwlProperty {
+                        name: child.clone(),
+                        ..super::OwlProperty::default()
+                    });
+                    entry.inverse_of = Some(partner);
+                }
+            }
             "domain" => {
                 if let Some(domain) = resource_ref(e) {
                     if let Some(prop) = &state.current_property {
@@ -242,9 +365,43 @@ mod owl_xml {
                     });
                 }
             }
+        } else if name == "ObjectProperty" || name == "DatatypeProperty" {
+            if let Some(prop_name) = class_ref(e) {
+                state.current_property = Some(prop_name.clone());
+                state.current_class = None;
+                let kind = if name == "ObjectProperty" {
+                    super::OwlPropertyKind::Object
+                } else {
+                    super::OwlPropertyKind::Data
+                };
+                let mut property = super::OwlProperty {
+                    name: prop_name.clone(),
+                    property_type: kind,
+                    ..super::OwlProperty::default()
+                };
+                if let Some(domain) = state.pending_domain.take() {
+                    property.domain = Some(domain);
+                }
+                if let Some(range) = state.pending_range.take() {
+                    property.range = Some(range);
+                }
+                model.properties.insert(prop_name.clone(), property);
+            }
         } else if name == "subClassOf" {
             if let (Some(child), Some(parent)) = (state.current_class.clone(), resource_ref(e)) {
                 add_parent(model, &child, parent);
+            }
+        } else if name == "subPropertyOf" {
+            if let (Some(child), Some(parent)) =
+                (state.current_property.clone(), resource_ref(e))
+            {
+                let entry = model.properties.entry(child.clone()).or_insert_with(|| super::OwlProperty {
+                    name: child.clone(),
+                    ..super::OwlProperty::default()
+                });
+                if !entry.parents.contains(&parent) {
+                    entry.parents.push(parent);
+                }
             }
         } else if name == "domain" {
             if let Some(domain) = resource_ref(e) {
@@ -265,6 +422,16 @@ mod owl_xml {
                 } else {
                     state.pending_range = Some(range);
                 }
+            }
+        } else if name == "inverseOf" {
+            if let (Some(child), Some(partner)) =
+                (state.current_property.clone(), resource_ref(e))
+            {
+                let entry = model.properties.entry(child.clone()).or_insert_with(|| super::OwlProperty {
+                    name: child.clone(),
+                    ..super::OwlProperty::default()
+                });
+                entry.inverse_of = Some(partner);
             }
         }
         Ok(())
@@ -440,6 +607,80 @@ mod tests {
         let speed = model.properties.get("daySpeed").expect("property");
         assert_eq!(speed.domain.as_deref(), Some("MilitaryConvoy"));
         assert_eq!(speed.range.as_deref(), Some("decimal"));
+    }
+
+    #[test]
+    fn resolve_property_domains_loops_until_stable() {
+        const SAMPLE: &str = r##"<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">
+  <owl:Class rdf:ID="ACTION-CONTEXT"/>
+  <owl:Class rdf:ID="ACTION-CONTEXT-STATUS"/>
+  <owl:ObjectProperty rdf:ID="AC-has-ACS">
+    <rdfs:domain rdf:resource="#ACTION-CONTEXT"/>
+    <rdfs:range rdf:resource="#ACTION-CONTEXT-STATUS"/>
+    <owl:inverseOf rdf:resource="#ACS-is-ascribed-to-AC"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="ACS-is-ascribed-to-AC"/>
+  <owl:DatatypeProperty rdf:ID="childSpeed">
+    <owl:subPropertyOf rdf:resource="#parentSpeed"/>
+  </owl:DatatypeProperty>
+  <owl:DatatypeProperty rdf:ID="parentSpeed">
+    <rdfs:domain rdf:resource="#ACTION-CONTEXT"/>
+    <rdfs:range rdf:resource="http://www.w3.org/2001/XMLSchema#decimal"/>
+  </owl:DatatypeProperty>
+</rdf:RDF>"##;
+        let mut model = OwlModel::parse_xml(SAMPLE).expect("parse");
+        model.resolve_property_domains();
+        assert_eq!(model.properties_with_domain_count(), 4);
+        let inverse = model.properties.get("ACS-is-ascribed-to-AC").expect("inverse");
+        assert_eq!(inverse.domain.as_deref(), Some("ACTION-CONTEXT-STATUS"));
+        let child = model.properties.get("childSpeed").expect("child");
+        assert_eq!(child.domain.as_deref(), Some("ACTION-CONTEXT"));
+    }
+
+    #[test]
+    fn parses_self_closing_inverse_property_stubs() {
+        const SAMPLE: &str = r##"<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">
+  <owl:Class rdf:ID="ACTION-CONTEXT"/>
+  <owl:Class rdf:ID="ACTION-CONTEXT-STATUS"/>
+  <owl:ObjectProperty rdf:ID="AC-has-ACS">
+    <rdfs:domain rdf:resource="#ACTION-CONTEXT"/>
+    <rdfs:range rdf:resource="#ACTION-CONTEXT-STATUS"/>
+    <owl:inverseOf rdf:resource="#ACS-is-ascribed-to-AC"/>
+  </owl:ObjectProperty>
+  <owl:ObjectProperty rdf:ID="ACS-is-ascribed-to-AC"/>
+</rdf:RDF>"##;
+        let mut model = OwlModel::parse_xml(SAMPLE).expect("parse");
+        assert_eq!(model.properties.len(), 2);
+        model.resolve_property_domains();
+        let inverse = model.properties.get("ACS-is-ascribed-to-AC").expect("inverse");
+        assert_eq!(inverse.domain.as_deref(), Some("ACTION-CONTEXT-STATUS"));
+        assert_eq!(inverse.range.as_deref(), Some("ACTION-CONTEXT"));
+    }
+
+    #[test]
+    fn ancestors_walks_subclass_chain() {
+        const SAMPLE: &str = r##"<?xml version="1.0"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+         xmlns:owl="http://www.w3.org/2002/07/owl#"
+         xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">
+  <owl:Class rdf:ID="ACTION"/>
+  <owl:Class rdf:ID="ACTION-EVENT">
+    <rdfs:subClassOf rdf:resource="#ACTION"/>
+  </owl:Class>
+  <owl:Class rdf:ID="FIRING-EVENT">
+    <rdfs:subClassOf rdf:resource="#ACTION-EVENT"/>
+  </owl:Class>
+</rdf:RDF>"##;
+        let model = OwlModel::parse_xml(SAMPLE).expect("parse");
+        let ancestors = model.ancestors_of("FIRING-EVENT");
+        assert!(ancestors.contains(&"ACTION-EVENT".to_owned()));
+        assert!(ancestors.contains(&"ACTION".to_owned()));
     }
 
     #[test]

@@ -25,6 +25,10 @@ pub struct ImportOptions {
     pub merge_seed: Option<MimManifest>,
     /// When true, import only OWL-derived classes (no synthetic padding).
     pub authoritative_mimworld: bool,
+    /// Target OWL attribute coverage ratio (default 1.0 = 100% of declared properties).
+    pub target_owl_attribute_coverage: f64,
+    /// Raw OWL XML retained for diagnostics (optional).
+    pub owl_xml: Option<String>,
 }
 
 impl Default for ImportOptions {
@@ -40,6 +44,8 @@ impl Default for ImportOptions {
             min_code_lists: 400,
             merge_seed: None,
             authoritative_mimworld: false,
+            target_owl_attribute_coverage: 1.0,
+            owl_xml: None,
         }
     }
 }
@@ -52,6 +58,22 @@ pub struct ImportReport {
     pub code_lists: usize,
     pub attribute_types: usize,
     pub total_elements: usize,
+    pub owl_properties_total: usize,
+    pub owl_properties_referenced: usize,
+    pub owl_properties_with_domain: usize,
+    pub owl_properties_imported: usize,
+    pub owl_properties_skipped: usize,
+    pub owl_attribute_coverage_ratio: f64,
+    pub meets_owl_coverage_target: bool,
+}
+
+/// Result of looping OWL properties into MIM attribute elements.
+#[derive(Clone, Debug, PartialEq)]
+struct AttributeImportBatch {
+    elements: Vec<ModelElementSpec>,
+    imported: usize,
+    skipped: usize,
+    with_domain: usize,
 }
 
 /// Converts parsed OWL into a `MimManifest`.
@@ -60,6 +82,9 @@ pub struct OwlImporter;
 
 impl OwlImporter {
     pub fn import(&self, owl: &OwlModel, options: ImportOptions) -> MimResult<(MimManifest, ImportReport)> {
+        let mut owl = owl.clone();
+        owl.resolve_property_domains();
+
         let action_subtree = owl.descendants_of(&options.action_root);
         let mut action_names: BTreeSet<String> = action_subtree;
         action_names.insert(options.action_root.clone());
@@ -110,21 +135,23 @@ impl OwlImporter {
         }
 
         if !options.authoritative_mimworld {
-            pad_class_coverage(owl, &mut object_names, &mut action_names, &options);
+            pad_class_coverage(&owl, &mut object_names, &mut action_names, &options);
         }
+
+        ensure_property_domains_in_taxonomy(&owl, &mut object_names, &mut action_names);
 
         let mut taxonomy = Vec::new();
         let mut elements = Vec::new();
         let mut code_lists = Vec::new();
 
         for name in &object_names {
-            let node = class_to_taxonomy_node(owl, name, true, &options)?;
+            let node = class_to_taxonomy_node(&owl, name, true, &options)?;
             taxonomy.push(node.clone());
             elements.push(taxonomy_to_element(&node, ModelElementKind::Class, &options)?);
         }
 
         for name in &action_names {
-            let node = class_to_taxonomy_node(owl, name, false, &options)?;
+            let node = class_to_taxonomy_node(&owl, name, false, &options)?;
             taxonomy.push(node.clone());
             elements.push(taxonomy_to_element(&node, ModelElementKind::Class, &options)?);
         }
@@ -140,22 +167,11 @@ impl OwlImporter {
             .map(|name| to_pascal_case(name))
             .collect();
 
-        for (prop_name, property) in &owl.properties {
-            if let Some(domain) = &property.domain {
-                let domain_name = taxonomy_domain_name(domain, &taxonomy_names);
-                if domain_name.is_some() {
-                    elements.push(property_to_element(
-                        prop_name,
-                        property,
-                        domain_name.as_ref().expect("domain"),
-                        &options,
-                    )?);
-                }
-            }
-        }
+        let attribute_batch = import_owl_attributes(&owl, &taxonomy_names, &options)?;
+        elements.extend(attribute_batch.elements);
 
         // Pad code lists from datatype property domains if needed.
-        pad_code_lists(owl, &mut code_lists, &options)?;
+        pad_code_lists(&owl, &mut code_lists, &options)?;
 
         let mut manifest = MimManifest {
             version: options.version.clone(),
@@ -180,6 +196,17 @@ impl OwlImporter {
             .iter()
             .filter(|element| element.kind == ModelElementKind::Attribute)
             .count();
+        let owl_properties_total = owl.properties.len();
+        let owl_properties_referenced = options
+            .owl_xml
+            .as_deref()
+            .map(OwlModel::count_xml_property_tag_lines)
+            .unwrap_or(owl_properties_total);
+        let owl_attribute_coverage_ratio = if owl_properties_total == 0 {
+            0.0
+        } else {
+            attribute_batch.imported as f64 / owl_properties_total as f64
+        };
         let report = ImportReport {
             object_types: manifest
                 .taxonomy
@@ -194,6 +221,14 @@ impl OwlImporter {
             code_lists: manifest.code_lists.len(),
             attribute_types,
             total_elements: manifest.elements.len(),
+            owl_properties_total,
+            owl_properties_referenced,
+            owl_properties_with_domain: attribute_batch.with_domain,
+            owl_properties_imported: attribute_batch.imported,
+            owl_properties_skipped: attribute_batch.skipped,
+            owl_attribute_coverage_ratio,
+            meets_owl_coverage_target: owl_attribute_coverage_ratio
+                >= options.target_owl_attribute_coverage,
         };
 
         Ok((manifest, report))
@@ -201,6 +236,68 @@ impl OwlImporter {
 }
 
 type MimResult<T> = Result<T, mim_core::MimError>;
+
+/// Loop all OWL properties and import those with a resolvable taxonomy domain.
+fn import_owl_attributes(
+    owl: &OwlModel,
+    taxonomy_names: &BTreeSet<String>,
+    options: &ImportOptions,
+) -> MimResult<AttributeImportBatch> {
+    let mut elements = Vec::new();
+    let mut imported = 0usize;
+    let mut skipped = 0usize;
+    let with_domain = owl
+        .properties
+        .values()
+        .filter(|property| property.domain.is_some())
+        .count();
+
+    for (prop_name, property) in &owl.properties {
+        let Some(domain) = property.domain.as_deref() else {
+            skipped += 1;
+            continue;
+        };
+        let Some(parent_class) = resolve_taxonomy_domain(owl, domain, taxonomy_names) else {
+            skipped += 1;
+            continue;
+        };
+        elements.push(property_to_element(
+            prop_name,
+            property,
+            &parent_class,
+            options,
+        )?);
+        imported += 1;
+    }
+
+    Ok(AttributeImportBatch {
+        elements,
+        imported,
+        skipped,
+        with_domain,
+    })
+}
+
+/// Ensure every OWL property domain class is represented in the import taxonomy.
+fn ensure_property_domains_in_taxonomy(
+    owl: &OwlModel,
+    object_names: &mut BTreeSet<String>,
+    action_names: &mut BTreeSet<String>,
+) {
+    for property in owl.properties.values() {
+        let Some(domain) = property.domain.as_deref() else {
+            continue;
+        };
+        let normalized = crate::owl::normalize_owl_ref(domain);
+        if !owl.classes.contains_key(&normalized) {
+            continue;
+        }
+        if action_names.contains(&normalized) {
+            continue;
+        }
+        object_names.insert(normalized);
+    }
+}
 
 fn pad_class_coverage(
     owl: &OwlModel,
@@ -555,6 +652,25 @@ fn taxonomy_domain_name(domain: &str, taxonomy_names: &BTreeSet<String>) -> Opti
     None
 }
 
+/// Resolve a property domain to a taxonomy class, walking OWL `subClassOf` ancestors.
+fn resolve_taxonomy_domain(
+    owl: &OwlModel,
+    domain: &str,
+    taxonomy_names: &BTreeSet<String>,
+) -> Option<String> {
+    if let Some(direct) = taxonomy_domain_name(domain, taxonomy_names) {
+        return Some(direct);
+    }
+
+    let normalized = crate::owl::normalize_owl_ref(domain);
+    for ancestor in owl.ancestors_of(&normalized) {
+        if let Some(resolved) = taxonomy_domain_name(&ancestor, taxonomy_names) {
+            return Some(resolved);
+        }
+    }
+    None
+}
+
 fn representation_term_for_range(range: Option<&str>) -> RepresentationTerm {
     let Some(raw) = range else {
         return RepresentationTerm::Text;
@@ -664,6 +780,24 @@ mod import_tests {
     use crate::owl::OwlModel;
 
     #[test]
+    fn imports_all_declared_owl_properties_from_bundled_jc3iedm() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../models/ontology/JC3IEDM.owl"
+        );
+        if !std::path::Path::new(path).exists() {
+            return;
+        }
+        let owl_data = std::fs::read_to_string(path).expect("read bundled owl");
+        let owl = OwlModel::parse_xml(&owl_data).expect("parse owl");
+        assert!(
+            owl.properties.len() >= 900,
+            "expected full OWL property parse, got {}",
+            owl.properties.len()
+        );
+    }
+
+    #[test]
     fn imports_hundreds_of_attributes_from_bundled_jc3iedm() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -675,13 +809,31 @@ mod import_tests {
         let owl_data = std::fs::read_to_string(path).expect("read bundled owl");
         let owl = OwlModel::parse_xml(&owl_data).expect("parse owl");
         let importer = OwlImporter;
-        let (_manifest, report) = importer
-            .import(&owl, ImportOptions::default())
-            .expect("import");
+        let mut options = ImportOptions::default();
+        options.owl_xml = Some(owl_data);
+        let (_manifest, report) = importer.import(&owl, options).expect("import");
         assert!(
             report.attribute_types >= 500,
             "expected scale attribute import, got {}",
             report.attribute_types
         );
+        assert!(
+            report.owl_properties_total >= 900,
+            "expected full OWL property loop, got {}",
+            report.owl_properties_total
+        );
+        assert!(
+            report.owl_properties_imported == report.owl_properties_total,
+            "expected 100% OWL property import, got {}/{}",
+            report.owl_properties_imported,
+            report.owl_properties_total
+        );
+        assert_eq!(report.owl_properties_skipped, 0);
+        assert!(
+            (report.owl_attribute_coverage_ratio - 1.0).abs() < f64::EPSILON,
+            "expected 100% OWL attribute coverage, got {:.1}%",
+            report.owl_attribute_coverage_ratio * 100.0
+        );
+        assert!(report.meets_owl_coverage_target);
     }
 }
