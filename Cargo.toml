@@ -1,0 +1,41 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/mim-core",
+    "crates/mim-model",
+    "crates/mim-runtime",
+    "crates/mim-compliance",
+    "crates/mim-import",
+    "crates/ainextgenc2",
+]
+default-members = ["crates/ainextgenc2"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jblestang/AINextGenC2"
+rust-version = "1.75"
+
+[workspace.dependencies]
+mim-core = { path = "crates/mim-core" }
+mim-model = { path = "crates/mim-model" }
+mim-runtime = { path = "crates/mim-runtime" }
+mim-compliance = { path = "crates/mim-compliance" }
+mim-import = { path = "crates/mim-import" }
+
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"
+uuid = { version = "=1.8.0", features = ["serde", "v4", "v5"] }
+chrono = { version = "0.4", features = ["serde"] }
+quick-xml = { version = "0.37", features = ["serialize"] }
+indexmap = { version = "=2.2.6", features = ["serde"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

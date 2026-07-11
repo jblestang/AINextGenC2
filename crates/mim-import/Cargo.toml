@@ -1,0 +1,28 @@
+[package]
+name = "mim-import"
+description = "Import OWL/RDF and other MIM model artifacts into manifest JSON"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "mim_import"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mim-import"
+path = "src/main.rs"
+
+[dependencies]
+mim-core = { workspace = true }
+mim-model = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+quick-xml = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+indexmap = { workspace = true }
+
+[dev-dependencies]
