@@ -181,13 +181,16 @@ let request = unwrap_put_object(&envelope, &nmb_verifying_key)?;
 
 ### HTTPS server (`mim-transport-http`)
 
-| Component | Library |
-|-----------|---------|
-| HTTP framework | Axum 0.7 |
-| TLS | rustls 0.22 + tokio-rustls |
-| PEM parsing | rustls-pemfile |
+| Route | Method | Operation |
+|-------|--------|-----------|
+| `/mip4-ies/v1/objects` | PUT | PutObject (STANAG 4778 envelope) |
+| `/mip4-ies/v1/objects/:oid` | GET | GetByOID |
+| `/mip4-ies/v1/objects` | GET | GetByFilter (`?filter=//Class…` or legacy query params) |
+| `/mip4-ies/v1/objects/:oid` | DELETE | DeleteObject |
 
-Configuration:
+Use `exchange_router()` for embedded HTTP stacks; `HttpExchangeServer` serves the same routes over TLS/mTLS.
+
+See [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md).
 
 ```rust
 use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer};

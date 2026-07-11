@@ -42,6 +42,10 @@ pub struct GetByOidResponse {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetByFilterRequest {
+    /// MIP4-IES XPath-like filter (`//ClassName[@prop='value']`). Preferred for FMN REST binding.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub filter: Option<String>,
+    #[serde(default)]
     pub class_name: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub property_name: Option<String>,

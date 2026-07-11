@@ -319,6 +319,7 @@ mod tests {
         let filtered = secured
             .get_by_filter(GetByFilterRequest {
                 class_name: "Target".into(),
+                filter: None,
                 property_name: None,
                 property_value: None,
             })

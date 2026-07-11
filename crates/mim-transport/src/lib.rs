@@ -18,6 +18,7 @@
 pub mod broker;
 pub mod envelope;
 pub mod error;
+pub mod filter;
 pub mod message;
 pub mod rest;
 pub mod secured;
@@ -25,10 +26,11 @@ pub mod secured;
 pub use broker::ExchangeBroker;
 pub use envelope::{envelope_from_json, envelope_to_json, unwrap_put_object, wrap_put_object};
 pub use error::{TransportError, TransportResult};
+pub use filter::{parse_filter, FilterExpression, FilterPredicate};
 pub use message::{
     DeleteObjectRequest, DeleteObjectResponse, ExchangeEnvelope, GetByFilterRequest,
     GetByFilterResponse, GetByOidRequest, GetByOidResponse, IesOperation, PutObjectRequest,
     PutObjectResponse,
 };
-pub use rest::{paths, HttpMethod, RestRoute};
+pub use rest::{paths, encode_oid_for_path, filter_from_query, HttpMethod, RestRoute};
 pub use secured::SecuredExchangeBroker;

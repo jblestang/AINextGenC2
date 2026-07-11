@@ -3,22 +3,16 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use axum::extract::State;
-use axum::http::{HeaderMap, StatusCode};
-use axum::response::IntoResponse;
-use axum::routing::{get, post};
-use axum::{Json, Router};
 use mim_crypto::NmbTrustStore;
-use mim_stanag4778::RestEnvelope;
-use mim_transport::envelope::unwrap_put_object;
 use mim_transport::secured::SecuredExchangeBroker;
-use mim_transport::TransportResult;
 use rustls::pki_types::CertificateDer;
 use rustls::{RootCertStore, ServerConfig};
 use tokio::net::TcpListener;
 use tokio_rustls::TlsAcceptor;
+use tokio::sync::Mutex;
 use tower::Service;
 
+use crate::routes::{self, AppState};
 use crate::tls::TlsIdentity;
 
 /// Runtime configuration for HTTPS exchange verification and PKI trust.
@@ -85,13 +79,10 @@ impl HttpExchangeServer {
             .map_err(|e| e.to_string())?;
 
         let state = AppState {
-            broker: Arc::new(tokio::sync::Mutex::new(broker)),
+            broker: Arc::new(Mutex::new(broker)),
             trust_store: self.config.trust_store.clone(),
         };
-        let app = Router::new()
-            .route("/mip4-ies/v1/objects", post(put_object))
-            .route("/health", get(|| async { "ok" }))
-            .with_state(state);
+        let app = routes::exchange_router(state);
 
         loop {
             let (stream, _) = listener.accept().await.map_err(|e| e.to_string())?;
@@ -142,73 +133,23 @@ fn build_server_config(
         .map_err(|e| e.to_string())
 }
 
-#[derive(Clone)]
-struct AppState {
-    broker: Arc<tokio::sync::Mutex<SecuredExchangeBroker>>,
-    trust_store: NmbTrustStore,
-}
-
-async fn put_object(
-    State(state): State<AppState>,
-    headers: HeaderMap,
-    Json(envelope): Json<RestEnvelope>,
-) -> impl IntoResponse {
-    match handle_put(&state, &headers, envelope).await {
-        Ok(()) => (StatusCode::CREATED, "{\"created\":true}").into_response(),
-        Err(err) => (StatusCode::FORBIDDEN, err.to_string()).into_response(),
-    }
-}
-
-async fn handle_put(
-    state: &AppState,
-    headers: &HeaderMap,
-    envelope: RestEnvelope,
-) -> TransportResult<()> {
-    let key_id = envelope
-        .assertion
-        .as_ref()
-        .map(|a| a.signature.key_id.as_str())
-        .ok_or_else(|| {
-            mim_transport::TransportError::Forbidden(
-                "REST envelope missing NMBS assertion".into(),
-            )
-        })?;
-    let verifying_key = state
-        .trust_store
-        .verify_key_for(key_id)
-        .map_err(|e| mim_transport::TransportError::Validation(e.to_string()))?
-        .clone();
-    if headers
-        .get("X-NATO-Confidentiality-Label")
-        .and_then(|v| v.to_str().ok())
-        != Some(envelope.originator_confidentiality_label.as_str())
-    {
-        return Err(mim_transport::TransportError::Forbidden(
-            "REST envelope label header mismatch".into(),
-        ));
-    }
-    let request = unwrap_put_object(&envelope, &verifying_key)?;
-    let mut broker = state.broker.lock().await;
-    broker.put_object(request)?;
-    Ok(())
-}
-
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use mim_crypto::conformance_keypair;
     use mim_labeling::{ClassificationLevel, ConfidentialityLabel, LabelPolicy};
-    use mim_stanag4778::RestEnvelope;
+    use mim_model::Metadata;
+    use mim_runtime::MimInstance;
     use mim_transport::envelope::wrap_put_object;
     use mim_transport::message::PutObjectRequest;
 
     trait WithMetadata {
-        fn with_metadata(self, metadata: mim_model::Metadata) -> Self;
+        fn with_metadata(self, metadata: Metadata) -> Self;
     }
 
-    impl WithMetadata for mim_runtime::MimInstance {
-        fn with_metadata(mut self, metadata: mim_model::Metadata) -> Self {
+    impl WithMetadata for MimInstance {
+        fn with_metadata(mut self, metadata: Metadata) -> Self {
             self.metadata = metadata;
             self
         }
@@ -224,15 +165,15 @@ mod tests {
         build_server_config(&identity, None).expect("server config");
     }
 
-    #[test]
-    fn handle_put_verifies_envelope_against_trust_store() {
+    #[tokio::test]
+    async fn handle_put_verifies_envelope_against_trust_store() {
         let keys = conformance_keypair().expect("keys");
         let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
-        let mut metadata = mim_model::Metadata::default();
+        let mut metadata = Metadata::default();
         metadata.security.policy = mim_core::Nillable::value("NATO".into());
         metadata.security.classification = mim_core::Nillable::value("SECRET".into());
         metadata.security.releasability = mim_core::Nillable::value("USA".into());
-        let instance = mim_runtime::MimInstance::new(
+        let instance = MimInstance::new(
             "Target",
             mim_core::SemanticId::parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("id"),
         )
@@ -244,7 +185,7 @@ mod tests {
             keys.signing_key(),
         )
         .expect("wrap");
-        let mut headers = HeaderMap::new();
+        let mut headers = axum::http::HeaderMap::new();
         headers.insert(
             "X-NATO-Confidentiality-Label",
             envelope
@@ -253,7 +194,7 @@ mod tests {
                 .expect("header"),
         );
         let state = AppState {
-            broker: Arc::new(tokio::sync::Mutex::new(
+            broker: Arc::new(Mutex::new(
                 SecuredExchangeBroker::from_preset(
                     mim_transport::ExchangeBroker::new(test_registry()),
                     mim_policy::SubjectAttributes::new("analyst", ClassificationLevel::Secret),
@@ -263,8 +204,9 @@ mod tests {
             )),
             trust_store: NmbTrustStore::from_verifying_keys([keys.verifying_key().clone()]),
         };
-        let rt = tokio::runtime::Runtime::new().expect("runtime");
-        rt.block_on(handle_put(&state, &headers, envelope)).expect("put");
+        routes::handle_put(&state, &headers, envelope)
+            .await
+            .expect("put");
     }
 
     fn test_registry() -> mim_model::ModelRegistry {

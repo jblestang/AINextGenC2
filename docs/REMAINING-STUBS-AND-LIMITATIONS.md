@@ -14,7 +14,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | ZTDF / ACP-240 Supp. 3–4 | Ready (encoding) | Partial (no KAS/ABAC) | Not ready |
 | ACP-240 full (Ed A + Supp. 5) | Partial | Not ready | Not ready |
 | DCS cross-domain | Ready (config file) | Partial | Not ready |
-| MIP4-IES transport | Partial | Partial | Not ready |
+| MIP4-IES transport | Partial (full REST CRUD) | Partial | Not ready |
 | Crypto / PKI | Conformance keys; FIPS build verified | PKI loaders exist; not default | RSA outside FIPS module |
 | MIM full manifest | 820 OWL attributes imported | Partial | Not accredited |
 | Audit | In-memory / file JSONL | Partial | WORM / HSM not implemented |
@@ -147,7 +147,13 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 - **Limitation:** No persistence or crash recovery.
 
-### 7.2 Default trust store is conformance PKI
+### 7.2 HTTP server — full REST CRUD (FMN progress)
+
+- **Implemented:** `PUT/GET/DELETE` on `/mip4-ies/v1/objects` (+ `:oid`); XPath subset filter via `?filter=//Class…`
+- **See:** [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md)
+- **Remaining:** Official MIP4 XML wire schemas, replication protocol, persistent store, conformance vectors
+
+### 7.3 Default trust store is conformance PKI
 
 - **Limitation:** HTTP server trusts conformance NMBS key unless configured.
 
@@ -191,7 +197,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 1. **KAS client stub** with ABAC gate before CEK unwrap *(deferred)*
 2. **OpenTDF/ZTDF schema validation** + external interop *(deferred)*
 3. **Wire production PKI** into DCS scenario and HTTP server defaults (feature-flag conformance)
-4. **HTTPS GET/DELETE** routes on `HttpExchangeServer`
+4. **MIP4-IES replication + persistent store** for FMN accreditation
 5. **WORM / SIEM connectors** for audit pipeline
 6. **Signed SPIF distribution** workflow
 7. **Authoritative MIM 5.1 OWL** when MIP republishes mimworld downloads

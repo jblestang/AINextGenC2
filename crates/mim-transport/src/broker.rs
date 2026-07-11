@@ -5,6 +5,7 @@ use mim_model::ModelRegistry;
 use mim_runtime::{MimInstance, ObjectIdentifier, SerializationFormat, Serializer, Validator};
 
 use crate::error::{TransportError, TransportResult};
+use crate::filter::{instance_matches, parse_filter};
 use crate::message::{
     DeleteObjectRequest, DeleteObjectResponse, GetByFilterRequest, GetByFilterResponse,
     GetByOidRequest, GetByOidResponse, PutObjectRequest, PutObjectResponse,
@@ -85,9 +86,22 @@ impl ExchangeBroker {
         &self,
         request: GetByFilterRequest,
     ) -> TransportResult<GetByFilterResponse> {
+        if let Some(expression) = request.filter.as_deref() {
+            let filter = parse_filter(expression)?;
+            let instances: Vec<MimInstance> = self
+                .store
+                .values()
+                .filter(|instance| !self.inactive.contains(&instance.oid))
+                .filter(|instance| instance_matches(instance, &filter))
+                .cloned()
+                .collect();
+            let count = instances.len();
+            return Ok(GetByFilterResponse { instances, count });
+        }
+
         if request.class_name.trim().is_empty() {
             return Err(TransportError::InvalidRequest(
-                "className filter must not be empty".into(),
+                "className or filter query parameter is required".into(),
             ));
         }
 
@@ -218,6 +232,27 @@ mod tests {
     }
 
     #[test]
+    fn filter_by_xpath_expression() {
+        let mut broker = ExchangeBroker::new(test_registry());
+        let instance = target_instance("HOSTILE-1");
+        broker
+            .put_object(PutObjectRequest {
+                instance: instance.clone(),
+            })
+            .expect("put");
+
+        let filtered = broker
+            .get_by_filter(GetByFilterRequest {
+                filter: Some("//Target[@nameText='HOSTILE-1']".into()),
+                class_name: String::new(),
+                property_name: None,
+                property_value: None,
+            })
+            .expect("filter");
+        assert_eq!(filtered.count, 1);
+    }
+
+    #[test]
     fn put_get_filter_delete_lifecycle() {
         let mut broker = ExchangeBroker::new(test_registry());
         let instance = target_instance("HOSTILE-1");
@@ -238,6 +273,7 @@ mod tests {
         let filtered = broker
             .get_by_filter(GetByFilterRequest {
                 class_name: "Target".into(),
+                filter: None,
                 property_name: Some("nameText".into()),
                 property_value: Some("HOSTILE-1".into()),
             })
