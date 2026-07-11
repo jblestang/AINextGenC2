@@ -1,6 +1,6 @@
 # MIP4-IES FMN Readiness
 
-Progress toward **FMN MIP4 Profile** / **MIP4-IES 4.4** REST binding conformance.
+Progress toward **FMN MIP4 Profile** / **MIP4-IES 4.4** REST binding conformance and accreditation.
 
 ## REST service interface (MIP4-IES 4.4)
 
@@ -8,17 +8,29 @@ Progress toward **FMN MIP4 Profile** / **MIP4-IES 4.4** REST binding conformance
 |--------|------|-----------|--------|
 | `PUT` | `/mip4-ies/v1/objects` | PutObject | Implemented (STANAG 4778 REST envelope + NMBS) |
 | `GET` | `/mip4-ies/v1/objects/:oid` | GetByOID | Implemented (URL-encoded OID) |
-| `GET` | `/mip4-ies/v1/objects?filter=…` | GetByFilter | Implemented (XPath subset) |
+| `GET` | `/mip4-ies/v1/objects?filter=…` | GetByFilter | Implemented (XPath subset + pagination) |
 | `DELETE` | `/mip4-ies/v1/objects/:oid` | DeleteObject | Implemented (soft delete) |
+| `GET` | `/mip4-ies/v1/sync?since=N` | Replication sync | Implemented (change journal) |
 
 Legacy query form remains supported: `?className=Target&propertyName=nameText&propertyValue=HOSTILE-1`.
+
+## Wire formats and content negotiation
+
+| Format | Media type | Direction |
+|--------|------------|-----------|
+| MIM JSON | `application/mim+json` | Default for REST JSON responses |
+| MIM XML | `application/mim+xml` | Select via `Accept: application/mim+xml` on GET |
+
+All responses include `MIM-Version: 5.1.0`.
+
+PutObject envelope payload may contain JSON or XML MIM instance bodies; format is detected from payload structure or `Content-Type` / `X-MIM-Payload-Format`.
 
 ## GetByFilter (XPath subset)
 
 FMN-aligned filter query parameter:
 
 ```
-GET /mip4-ies/v1/objects?filter=//Target[@nameText='HOSTILE-1']
+GET /mip4-ies/v1/objects?filter=//Target[@nameText='HOSTILE-1']&limit=10&offset=0
 ```
 
 Supported expressions:
@@ -26,6 +38,30 @@ Supported expressions:
 - `//ClassName`
 - `//ClassName[property='value']`
 - `//ClassName[@property='value']`
+
+Pagination: `limit` and `offset` query parameters; response includes `count` (returned) and `total` (matched before pagination).
+
+## Replication sync
+
+Peer nodes poll the change journal:
+
+```
+GET /mip4-ies/v1/sync?since=0
+```
+
+Returns `{ latestSequence, entries[] }` with PutObject/DeleteObject journal records.
+
+## Persistence
+
+File-backed exchange snapshots via `mim_transport::FileExchangeStore`:
+
+- Primary snapshot: `exchange.json` (instances, inactive OIDs, journal, sequence)
+- Append-only audit: `exchange.journal.jsonl`
+
+## MIM XML exchange schema
+
+- Serialize/deserialize: `mim_runtime::Serializer` with `SerializationFormat::Xml`
+- XSD validation: `mim_runtime::validate_exchange_xsd()` (bundled `schemas/mim-exchange.xsd`)
 
 ## OID path encoding
 
@@ -48,15 +84,16 @@ Use `mim_transport::encode_oid_for_path()`.
 
 | Crate | Role |
 |-------|------|
-| `mim-transport` | IES broker, REST parsing, XPath filter, STANAG envelope helpers |
-| `mim-transport-http` | Axum router (`exchange_router`), TLS/mTLS server |
+| `mim-runtime` | MIM XML serialize/deserialize, exchange XSD |
+| `mim-transport` | IES broker, journal, persistence, wire media types |
+| `mim-transport-http` | Axum router (`exchange_router`), content negotiation |
+| `mim-mip4-conformance` | Accreditation test vectors (`--mip4`) |
 
 ## Verification
 
 ```bash
-cargo test -p mim-transport
-cargo test -p mim-transport-http
-cargo test -p ainextgenc2 transport
+cargo test -p mim-runtime -p mim-transport -p mim-transport-http -p mim-mip4-conformance
+cargo run -p ainextgenc2 -- --mip4
 cargo run -p ainextgenc2 --example mip4_ies_exchange
 ```
 
@@ -64,12 +101,10 @@ cargo run -p ainextgenc2 --example mip4_ies_exchange
 
 | Gap | Priority |
 |-----|----------|
-| Official MIP4-IES XML message schemas on wire | High |
+| Official MIP4-IES JSON-LD profile on wire | Medium |
 | Full XPath filter language | Medium |
-| Replication / peer sync protocol | High |
-| Persistent exchange store | High |
-| MIP4-IES conformance test vectors | High |
+| Peer-to-peer replication protocol (beyond journal poll) | Medium |
 | Live HTTPS E2E in CI | Medium |
-| JSON-LD payload profile (MIP4 JSON-LD) | Medium |
+| NATO-provided MIP4-IES accreditation test vectors | High |
 
 See [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md).

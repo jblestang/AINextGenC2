@@ -2,18 +2,27 @@
 
 use std::sync::Arc;
 
+use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::header::{ACCEPT, CONTENT_TYPE};
+use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use mim_crypto::NmbTrustStore;
+use mim_runtime::{SerializationFormat, Serializer};
 use mim_stanag4778::RestEnvelope;
-use mim_transport::envelope::unwrap_put_object;
+use mim_transport::envelope::unwrap_put_object_with_format;
 use mim_transport::message::PutObjectResponse;
 use mim_transport::rest::{parse_delete, parse_get_by_oid};
 use mim_transport::secured::SecuredExchangeBroker;
-use mim_transport::{encode_oid_for_path, filter_from_query, TransportError, TransportResult};
+use mim_transport::wire::{
+    format_from_content_type, negotiate_format, wire_registry, WirePayloadFormat, HEADER_MIM_VERSION,
+    MEDIA_MIM_JSON, MEDIA_MIM_XML, MIM_VERSION,
+};
+use mim_transport::{
+    encode_oid_for_path, filter_from_query, TransportError, TransportResult,
+};
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
@@ -24,7 +33,7 @@ pub struct AppState {
     pub trust_store: NmbTrustStore,
 }
 
-/// Build the MIP4-IES REST router (`/mip4-ies/v1/objects` CRUD).
+/// Build the MIP4-IES REST router (`/mip4-ies/v1/objects` CRUD + replication sync).
 pub fn exchange_router(state: AppState) -> Router {
     Router::new()
         .route(
@@ -32,6 +41,7 @@ pub fn exchange_router(state: AppState) -> Router {
             get(get_by_oid).delete(delete_object),
         )
         .route("/mip4-ies/v1/objects", put(put_object).get(get_by_filter))
+        .route("/mip4-ies/v1/sync", get(sync_changes))
         .route("/health", get(|| async { "ok" }))
         .with_state(state)
 }
@@ -45,30 +55,57 @@ struct FilterQuery {
     property_name: Option<String>,
     #[serde(rename = "propertyValue")]
     property_value: Option<String>,
+    limit: Option<usize>,
+    offset: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SyncQuery {
+    since: Option<u64>,
 }
 
 async fn put_object(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Json(envelope): Json<RestEnvelope>,
+    body: String,
 ) -> Response {
+    let envelope = match serde_json::from_str::<RestEnvelope>(&body) {
+        Ok(envelope) => envelope,
+        Err(err) => return map_error(TransportError::Serialization(err.to_string())),
+    };
     match handle_put(&state, &headers, envelope).await {
-        Ok(response) => (StatusCode::CREATED, Json(response)).into_response(),
+        Ok(response) => negotiated_response(
+            &headers,
+            WirePayloadFormat::Json,
+            StatusCode::CREATED,
+            &response,
+        ),
         Err(err) => map_error(err),
     }
 }
 
 async fn get_by_oid(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(encoded_oid): Path<String>,
 ) -> Response {
+    let format = negotiated_format(&headers);
     let oid = percent_decode_path_segment(&encoded_oid);
     let path = format!("/mip4-ies/v1/objects/{oid}");
     match parse_get_by_oid(&path) {
         Ok(request) => {
             let broker = state.broker.lock().await;
             match broker.get_by_oid(request) {
-                Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+                Ok(response) => {
+                    if format == WirePayloadFormat::Xml {
+                        match serialize_instance(&response.instance, format) {
+                            Ok(body) => mim_payload_response(format, body),
+                            Err(err) => map_error(err),
+                        }
+                    } else {
+                        negotiated_response(&headers, format, StatusCode::OK, &response)
+                    }
+                }
                 Err(err) => map_error(err),
             }
         }
@@ -78,13 +115,17 @@ async fn get_by_oid(
 
 async fn get_by_filter(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Query(query): Query<FilterQuery>,
 ) -> Response {
+    let format = negotiated_format(&headers);
     let request = match filter_from_query(
         query.filter.as_deref(),
         query.class_name.as_deref(),
         query.property_name.as_deref(),
         query.property_value.as_deref(),
+        query.limit,
+        query.offset,
     ) {
         Ok(request) => request,
         Err(err) => return map_error(err),
@@ -92,13 +133,23 @@ async fn get_by_filter(
 
     let broker = state.broker.lock().await;
     match broker.get_by_filter(request) {
-        Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+        Ok(response) => {
+            if format == WirePayloadFormat::Xml {
+                match serialize_instances(&response.instances, format) {
+                    Ok(body) => mim_payload_response(format, body),
+                    Err(err) => map_error(err),
+                }
+            } else {
+                negotiated_response(&headers, format, StatusCode::OK, &response)
+            }
+        }
         Err(err) => map_error(err),
     }
 }
 
 async fn delete_object(
     State(state): State<AppState>,
+    headers: HeaderMap,
     Path(encoded_oid): Path<String>,
 ) -> Response {
     let oid = percent_decode_path_segment(&encoded_oid);
@@ -107,7 +158,9 @@ async fn delete_object(
         Ok(request) => {
             let mut broker = state.broker.lock().await;
             match broker.delete_object(request) {
-                Ok(response) => (StatusCode::OK, Json(response)).into_response(),
+                Ok(response) => {
+                    negotiated_response(&headers, WirePayloadFormat::Json, StatusCode::OK, &response)
+                }
                 Err(err) => map_error(err),
             }
         }
@@ -115,11 +168,34 @@ async fn delete_object(
     }
 }
 
+async fn sync_changes(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Query(query): Query<SyncQuery>,
+) -> Response {
+    let since = query.since.unwrap_or(0);
+    let broker = state.broker.lock().await;
+    let response = broker.sync_since(since);
+    negotiated_response(&headers, WirePayloadFormat::Json, StatusCode::OK, &response)
+}
+
 pub async fn handle_put(
     state: &AppState,
     headers: &HeaderMap,
     envelope: RestEnvelope,
 ) -> TransportResult<PutObjectResponse> {
+    let payload_format = headers
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .and_then(format_from_content_type)
+        .or_else(|| {
+            headers
+                .get("X-MIM-Payload-Format")
+                .and_then(|value| value.to_str().ok())
+                .and_then(format_from_content_type)
+        })
+        .unwrap_or_else(|| mim_transport::detect_payload_format(&envelope.payload));
+
     let key_id = envelope
         .assertion
         .as_ref()
@@ -141,9 +217,80 @@ pub async fn handle_put(
             "REST envelope label header mismatch".into(),
         ));
     }
-    let request = unwrap_put_object(&envelope, &verifying_key)?;
+    let request =
+        unwrap_put_object_with_format(&envelope, &verifying_key, Some(payload_format))?;
     let mut broker = state.broker.lock().await;
     broker.put_object(request)
+}
+
+fn negotiated_format(headers: &HeaderMap) -> WirePayloadFormat {
+    negotiate_format(
+        headers.get(ACCEPT).and_then(|value| value.to_str().ok()),
+        WirePayloadFormat::Json,
+    )
+}
+
+fn negotiated_response<T: serde::Serialize>(
+    _headers: &HeaderMap,
+    format: WirePayloadFormat,
+    status: StatusCode,
+    value: &T,
+) -> Response {
+    match format {
+        WirePayloadFormat::Json => {
+            let mut response = (status, Json(value)).into_response();
+            apply_mim_headers(response.headers_mut(), MEDIA_MIM_JSON);
+            response
+        }
+        WirePayloadFormat::Xml => match serde_json::to_string(value) {
+            Ok(json) => {
+                let mut response = (status, json).into_response();
+                apply_mim_headers(response.headers_mut(), MEDIA_MIM_JSON);
+                response
+            }
+            Err(err) => map_error(TransportError::Serialization(err.to_string())),
+        },
+    }
+}
+
+fn mim_payload_response(format: WirePayloadFormat, body: String) -> Response {
+    let mut response = Response::new(Body::from(body));
+    *response.status_mut() = StatusCode::OK;
+    apply_mim_headers(response.headers_mut(), format.content_type());
+    response
+}
+
+fn apply_mim_headers(headers: &mut HeaderMap, content_type: &str) {
+    if let Ok(value) = HeaderValue::from_str(MIM_VERSION) {
+        headers.insert(HEADER_MIM_VERSION, value);
+    }
+    if let Ok(value) = HeaderValue::from_str(content_type) {
+        headers.insert(CONTENT_TYPE, value);
+    }
+}
+
+fn serialize_instance(
+    instance: &mim_runtime::MimInstance,
+    format: WirePayloadFormat,
+) -> TransportResult<String> {
+    let serializer = Serializer::new(wire_registry().map_err(TransportError::from)?);
+    serializer
+        .serialize_instance(instance, format.serialization_format())
+        .map_err(TransportError::from)
+}
+
+fn serialize_instances(
+    instances: &[mim_runtime::MimInstance],
+    format: WirePayloadFormat,
+) -> TransportResult<String> {
+    let serializer = Serializer::new(wire_registry().map_err(TransportError::from)?);
+    let mut store = mim_runtime::InstanceStore::default();
+    for instance in instances {
+        store.insert(instance.clone());
+    }
+    serializer
+        .serialize_store(&store, format.serialization_format())
+        .map_err(TransportError::from)
 }
 
 fn percent_decode_path_segment(segment: &str) -> String {
@@ -370,6 +517,13 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(put_response.status(), StatusCode::CREATED);
+        assert_eq!(
+            put_response
+                .headers()
+                .get(HEADER_MIM_VERSION)
+                .and_then(|value| value.to_str().ok()),
+            Some(MIM_VERSION)
+        );
         let put_bytes = axum::body::to_bytes(put_response.into_body(), usize::MAX)
             .await
             .expect("body");
@@ -413,6 +567,19 @@ mod tests {
             .expect("response");
         assert_eq!(filter_response.status(), StatusCode::OK);
 
+        let sync_response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/mip4-ies/v1/sync?since=0")
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(sync_response.status(), StatusCode::OK);
+
         let delete_response = app
             .clone()
             .oneshot(
@@ -437,5 +604,58 @@ mod tests {
             .await
             .expect("response");
         assert_eq!(gone_response.status(), StatusCode::GONE);
+    }
+
+    #[tokio::test]
+    async fn get_by_oid_returns_xml_when_accepted() {
+        let keys = conformance_keypair().expect("keys");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let instance = labeled_target("HOSTILE-XML");
+        let envelope = wrap_put_object(
+            &label,
+            &PutObjectRequest { instance },
+            keys.signing_key(),
+        )
+        .expect("wrap");
+        let body = serde_json::to_string(&envelope).expect("json");
+
+        let state = test_app_state();
+        let app = exchange_router(state);
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/mip4-ies/v1/objects")
+                    .header("content-type", "application/json")
+                    .header(
+                        "X-NATO-Confidentiality-Label",
+                        &envelope.originator_confidentiality_label,
+                    )
+                    .body(Body::from(body))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        let stored_oid = encode_oid_for_path("test-oid-HOSTILE-XML");
+        let get_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/mip4-ies/v1/objects/{stored_oid}"))
+                    .header("accept", MEDIA_MIM_XML)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(get_response.status(), StatusCode::OK);
+        assert_eq!(
+            get_response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some(MEDIA_MIM_XML)
+        );
     }
 }

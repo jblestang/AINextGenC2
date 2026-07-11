@@ -1,0 +1,19 @@
+[package]
+name = "mim-mip4-conformance"
+description = "MIP4-IES conformance test suite for FMN accreditation path"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+mim-core = { workspace = true }
+mim-model = { workspace = true }
+mim-runtime = { workspace = true }
+mim-transport = { workspace = true }
+mim-crypto = { workspace = true }
+mim-labeling = { workspace = true }
+mim-stanag4778 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

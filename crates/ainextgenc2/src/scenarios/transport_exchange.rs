@@ -76,6 +76,8 @@ impl TransportExchangeScenario {
             filter: None,
             property_name: None,
             property_value: None,
+            limit: None,
+            offset: None,
         })?;
         let target_count = targets.count;
 
@@ -84,6 +86,8 @@ impl TransportExchangeScenario {
             filter: Some("//Target[@nameText='HOSTILE-1']".into()),
             property_name: None,
             property_value: None,
+            limit: None,
+            offset: None,
         })?;
 
         let hostile_track = hostile

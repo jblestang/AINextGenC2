@@ -117,6 +117,8 @@ pub fn filter_from_query(
     class_name: Option<&str>,
     property_name: Option<&str>,
     property_value: Option<&str>,
+    limit: Option<usize>,
+    offset: Option<usize>,
 ) -> TransportResult<GetByFilterRequest> {
     if let Some(expression) = filter.filter(|value| !value.is_empty()) {
         parse_filter(expression)?;
@@ -125,6 +127,8 @@ pub fn filter_from_query(
             class_name: String::new(),
             property_name: None,
             property_value: None,
+            limit,
+            offset,
         });
     }
 
@@ -140,6 +144,8 @@ pub fn filter_from_query(
         class_name,
         property_name: property_name.map(str::to_owned),
         property_value: property_value.map(str::to_owned),
+        limit,
+        offset,
     })
 }
 

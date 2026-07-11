@@ -1,9 +1,11 @@
 use mim_crypto::{SigningKey, VerifyingKey};
 use mim_labeling::{ConfidentialityLabel, LabelResult};
+use mim_runtime::Serializer;
 use mim_stanag4778::RestEnvelope;
 
 use crate::error::{TransportError, TransportResult};
 use crate::message::PutObjectRequest;
+use crate::wire::{detect_payload_format, wire_registry, WirePayloadFormat};
 
 /// Wrap a PutObject request in a STANAG 4778 REST envelope with NMBS assertion binding.
 pub fn wrap_put_object(
@@ -11,21 +13,48 @@ pub fn wrap_put_object(
     request: &PutObjectRequest,
     signing_key: &SigningKey,
 ) -> LabelResult<RestEnvelope> {
-    let payload = serde_json::to_string(&request.instance)
+    wrap_put_object_with_format(label, request, signing_key, WirePayloadFormat::Json)
+}
+
+/// Wrap a PutObject request using the selected MIM wire payload format.
+pub fn wrap_put_object_with_format(
+    label: &ConfidentialityLabel,
+    request: &PutObjectRequest,
+    signing_key: &SigningKey,
+    format: WirePayloadFormat,
+) -> LabelResult<RestEnvelope> {
+    let serializer = Serializer::new(
+        wire_registry().map_err(|e| mim_labeling::LabelError::Serialization(e.to_string()))?,
+    );
+    let payload = serializer
+        .serialize_instance(&request.instance, format.serialization_format())
         .map_err(|e| mim_labeling::LabelError::Serialization(e.to_string()))?;
     RestEnvelope::wrap(label, payload.as_bytes(), signing_key)
 }
 
-/// Verify a REST envelope and deserialize the embedded PutObject request.
+/// Verify a REST envelope and deserialize the embedded PutObject request (JSON payload).
 pub fn unwrap_put_object(
     envelope: &RestEnvelope,
     verifying_key: &VerifyingKey,
 ) -> TransportResult<PutObjectRequest> {
+    unwrap_put_object_with_format(envelope, verifying_key, None)
+}
+
+/// Verify a REST envelope and deserialize the embedded PutObject request.
+pub fn unwrap_put_object_with_format(
+    envelope: &RestEnvelope,
+    verifying_key: &VerifyingKey,
+    format: Option<WirePayloadFormat>,
+) -> TransportResult<PutObjectRequest> {
     envelope
         .verify(verifying_key)
         .map_err(|e| TransportError::Forbidden(e.to_string()))?;
-    let instance = serde_json::from_str(&envelope.payload)
-        .map_err(|e| TransportError::Serialization(e.to_string()))?;
+
+    let format = format.unwrap_or_else(|| detect_payload_format(&envelope.payload));
+    let serializer = Serializer::new(wire_registry().map_err(TransportError::from)?);
+    let instance = serializer
+        .deserialize_instance(&envelope.payload, format.serialization_format())
+        .map_err(TransportError::from)?;
     Ok(PutObjectRequest { instance })
 }
 
@@ -49,6 +78,7 @@ mod tests {
     use mim_runtime::{MimInstance, PropertyValue};
 
     use super::*;
+    use crate::wire::WirePayloadFormat;
 
     fn labeled_target() -> MimInstance {
         let class_id = SemanticId::parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("id");
@@ -81,6 +111,27 @@ mod tests {
         };
         let envelope = wrap_put_object(&label, &request, keys.signing_key()).expect("wrap");
         let restored = unwrap_put_object(&envelope, keys.verifying_key()).expect("unwrap");
+        assert_eq!(restored.instance.class_name, "Target");
+    }
+
+    #[test]
+    fn put_object_xml_payload_round_trip() {
+        let keys = conformance_keypair().expect("keys");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let request = PutObjectRequest {
+            instance: labeled_target(),
+        };
+        let envelope = wrap_put_object_with_format(
+            &label,
+            &request,
+            keys.signing_key(),
+            WirePayloadFormat::Xml,
+        )
+        .expect("wrap");
+        assert!(envelope.payload.trim_start().starts_with('<'));
+        let restored =
+            unwrap_put_object_with_format(&envelope, keys.verifying_key(), Some(WirePayloadFormat::Xml))
+                .expect("unwrap");
         assert_eq!(restored.instance.class_name, "Target");
     }
 }

@@ -12,7 +12,7 @@ use crate::envelope::unwrap_put_object;
 use crate::error::{TransportError, TransportResult};
 use crate::message::{
     DeleteObjectRequest, DeleteObjectResponse, GetByFilterRequest, GetByFilterResponse,
-    GetByOidRequest, GetByOidResponse, PutObjectRequest, PutObjectResponse,
+    GetByOidRequest, GetByOidResponse, PutObjectRequest, PutObjectResponse, SyncResponse,
 };
 
 /// MIP4-IES exchange broker with PEP-gated access control.
@@ -145,6 +145,7 @@ impl SecuredExchangeBroker {
         Ok(GetByFilterResponse {
             instances: permitted,
             count,
+            total: response.total,
         })
     }
 
@@ -179,6 +180,14 @@ impl SecuredExchangeBroker {
 
     pub fn serialize_active_store(&self) -> TransportResult<String> {
         self.inner.serialize_active_store()
+    }
+
+    pub fn sync_since(&self, since: u64) -> SyncResponse {
+        self.inner.sync_since(since)
+    }
+
+    pub fn latest_sequence(&self) -> u64 {
+        self.inner.latest_sequence()
     }
 
     fn instance_label(instance: &MimInstance) -> TransportResult<mim_labeling::ConfidentialityLabel> {
@@ -322,6 +331,8 @@ mod tests {
                 filter: None,
                 property_name: None,
                 property_value: None,
+                limit: None,
+                offset: None,
             })
             .expect("filter");
         assert_eq!(filtered.count, 1);

@@ -1,10 +1,14 @@
-use mim_core::{MimError, MimResult};
+use std::str::FromStr;
+
+use mim_core::{MimError, MimResult, NilReason, Nillable, SemanticId};
 use mim_model::ModelRegistry;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
+use quick_xml::Reader;
 use quick_xml::Writer;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
-use crate::instance::{InstanceStore, MimInstance};
+use crate::instance::{InstanceStore, MimInstance, PropertyValue};
 
 /// Supported MIM serialization formats.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -41,6 +45,35 @@ impl Serializer {
                 self.write_instance_fragment(&mut writer, instance)?;
                 bytes_to_string(writer.into_inner())
             }
+        }
+    }
+
+    pub fn deserialize_instance(
+        &self,
+        data: &str,
+        format: SerializationFormat,
+    ) -> MimResult<MimInstance> {
+        match format {
+            SerializationFormat::Json => serde_json::from_str(data)
+                .map_err(|e| MimError::Serialization(e.to_string())),
+            SerializationFormat::Xml => self.parse_xml_instances(data)?.into_iter().next().ok_or_else(
+                || MimError::Serialization("XML payload contains no MIM instance".into()),
+            ),
+        }
+    }
+
+    pub fn deserialize_store(
+        &self,
+        data: &str,
+        format: SerializationFormat,
+    ) -> MimResult<Vec<MimInstance>> {
+        match format {
+            SerializationFormat::Json => {
+                let payload: ExchangePayload = serde_json::from_str(data)
+                    .map_err(|e| MimError::Serialization(e.to_string()))?;
+                Ok(payload.instances)
+            }
+            SerializationFormat::Xml => self.parse_xml_instances(data),
         }
     }
 
@@ -91,6 +124,154 @@ impl Serializer {
 
     fn to_json(&self, instance: &MimInstance) -> MimResult<String> {
         serde_json::to_string_pretty(instance).map_err(|e| MimError::Serialization(e.to_string()))
+    }
+
+    fn parse_xml_instances(&self, data: &str) -> MimResult<Vec<MimInstance>> {
+        let mut reader = Reader::from_str(data);
+        reader.config_mut().trim_text(true);
+
+        let mut instances = Vec::new();
+        let mut buf = Vec::new();
+        let mut in_exchange = false;
+
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(start)) => {
+                    let name = local_name(start.name().as_ref());
+                    if name == "Exchange" {
+                        in_exchange = true;
+                    } else if in_exchange || !instances.is_empty() || is_instance_start(&start) {
+                        let instance = self.parse_instance_element(&mut reader, &start)?;
+                        instances.push(instance);
+                    }
+                }
+                Ok(Event::Empty(empty)) if is_instance_start(&empty) => {
+                    let instance = self.parse_instance_attributes(&empty)?;
+                    instances.push(instance);
+                }
+                Ok(Event::Eof) => break,
+                Ok(_) => {}
+                Err(error) => {
+                    return Err(MimError::Serialization(error.to_string()));
+                }
+            }
+            buf.clear();
+        }
+
+        if instances.is_empty() {
+            return Err(MimError::Serialization(
+                "XML payload contains no MIM instance elements".into(),
+            ));
+        }
+
+        Ok(instances)
+    }
+
+    fn parse_instance_element(
+        &self,
+        reader: &mut Reader<&[u8]>,
+        start: &BytesStart<'_>,
+    ) -> MimResult<MimInstance> {
+        let mut instance = self.parse_instance_attributes(start)?;
+        let class_tag = local_name(start.name().as_ref());
+        let mut buf = Vec::new();
+
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Start(prop_start)) => {
+                    let prop_name = local_name(prop_start.name().as_ref());
+                    let property = self.parse_property_element(reader, &prop_start, prop_name)?;
+                    instance.properties.push(property);
+                }
+                Ok(Event::Empty(prop_empty)) => {
+                    let prop_name = local_name(prop_empty.name().as_ref());
+                    let property = self.parse_property_attributes(&prop_empty, prop_name, None)?;
+                    instance.properties.push(property);
+                }
+                Ok(Event::End(end)) if local_name(end.name().as_ref()) == class_tag => break,
+                Ok(Event::Eof) => {
+                    return Err(MimError::Serialization(format!(
+                        "unexpected end of XML inside <{class_tag}>"
+                    )));
+                }
+                Ok(_) => {}
+                Err(error) => return Err(MimError::Serialization(error.to_string())),
+            }
+            buf.clear();
+        }
+
+        Ok(instance)
+    }
+
+    fn parse_instance_attributes(&self, start: &BytesStart<'_>) -> MimResult<MimInstance> {
+        let class_name = local_name(start.name().as_ref());
+        let oid = required_attribute(start, "oid")?;
+        let semantic_raw = required_attribute(start, "semanticId")?;
+        let semantic_id = SemanticId::parse(&semantic_raw)
+            .map_err(|e| MimError::Serialization(e.to_string()))?;
+
+        MimInstance::new(class_name, semantic_id).and_then(|mut instance| {
+            instance.oid = crate::oid::ObjectIdentifier::new(oid)?;
+            Ok(instance)
+        })
+    }
+
+    fn parse_property_element(
+        &self,
+        reader: &mut Reader<&[u8]>,
+        start: &BytesStart<'_>,
+        prop_name: String,
+    ) -> MimResult<PropertyValue> {
+        if is_xsi_nil(start) {
+            let reason = nil_reason_from_attribute(start);
+            return Ok(PropertyValue::nil(prop_name, reason));
+        }
+
+        let mut buf = Vec::new();
+        let mut text = String::new();
+
+        loop {
+            match reader.read_event_into(&mut buf) {
+                Ok(Event::Text(event)) => text.push_str(event.unescape().unwrap_or_default().as_ref()),
+                Ok(Event::CData(event)) => {
+                    text.push_str(&String::from_utf8_lossy(event.as_ref()));
+                }
+                Ok(Event::End(end)) if local_name(end.name().as_ref()) == prop_name => break,
+                Ok(Event::Eof) => {
+                    return Err(MimError::Serialization(format!(
+                        "unexpected end of XML inside <{prop_name}>"
+                    )));
+                }
+                Ok(_) => {}
+                Err(error) => return Err(MimError::Serialization(error.to_string())),
+            }
+            buf.clear();
+        }
+
+        self.parse_property_attributes(start, prop_name, Some(text.trim()))
+    }
+
+    fn parse_property_attributes(
+        &self,
+        start: &BytesStart<'_>,
+        prop_name: String,
+        text: Option<&str>,
+    ) -> MimResult<PropertyValue> {
+        if is_xsi_nil(start) {
+            return Ok(PropertyValue::nil(prop_name, nil_reason_from_attribute(start)));
+        }
+
+        let Some(text) = text.filter(|value| !value.is_empty()) else {
+            return Ok(PropertyValue {
+                name: prop_name,
+                semantic_id: None,
+                value: Nillable::Absent,
+            });
+        };
+
+        let value = serde_json::from_str(text)
+            .unwrap_or_else(|_| Value::String(text.to_owned()));
+        Ok(PropertyValue::json(prop_name, value))
     }
 
     fn write_xml_declaration(&self, writer: &mut Writer<Vec<u8>>) -> MimResult<()> {
@@ -149,7 +330,7 @@ impl Serializer {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ExchangePayload {
     model_version: String,
@@ -182,6 +363,58 @@ fn sanitize_xml_name(name: &str) -> MimResult<String> {
 
 fn bytes_to_string(bytes: Vec<u8>) -> MimResult<String> {
     String::from_utf8(bytes).map_err(|e| MimError::Serialization(e.to_string()))
+}
+
+fn local_name(name: &[u8]) -> String {
+    let raw = String::from_utf8_lossy(name);
+    raw.rsplit(':').next().unwrap_or(&raw).to_owned()
+}
+
+fn is_instance_start(start: &BytesStart<'_>) -> bool {
+    start.attributes().flatten().any(|attr| {
+        local_name(attr.key.as_ref()) == "oid"
+    })
+}
+
+fn required_attribute(start: &BytesStart<'_>, key: &str) -> MimResult<String> {
+    for attr in start.attributes().flatten() {
+        if local_name(attr.key.as_ref()) == key {
+            let value = attr
+                .decode_and_unescape_value(reader_decoder())
+                .map_err(|e| MimError::Serialization(e.to_string()))?;
+            return Ok(value.into_owned());
+        }
+    }
+    Err(MimError::Serialization(format!(
+        "MIM instance missing required attribute '{key}'"
+    )))
+}
+
+fn reader_decoder() -> quick_xml::encoding::Decoder {
+    quick_xml::encoding::Decoder {}
+}
+
+fn is_xsi_nil(start: &BytesStart<'_>) -> bool {
+    start.attributes().flatten().any(|attr| {
+        local_name(attr.key.as_ref()) == "nil"
+            && attr
+                .decode_and_unescape_value(reader_decoder())
+                .map(|value| value == "true")
+                .unwrap_or(false)
+    })
+}
+
+fn nil_reason_from_attribute(start: &BytesStart<'_>) -> NilReason {
+    for attr in start.attributes().flatten() {
+        if local_name(attr.key.as_ref()) == "nilReason" {
+            if let Ok(value) = attr.decode_and_unescape_value(reader_decoder()) {
+                if let Ok(reason) = NilReason::from_str(value.as_ref()) {
+                    return reason;
+                }
+            }
+        }
+    }
+    NilReason::Unknown
 }
 
 #[cfg(test)]
@@ -237,6 +470,42 @@ mod tests {
             .expect("xml");
         assert_eq!(xml.matches("<?xml").count(), 1);
         assert!(xml.contains("mim:Exchange"));
+    }
+
+    #[test]
+    fn xml_roundtrip_instance_and_store() {
+        let registry = ModelRegistry::from_manifest(minimal_manifest()).expect("registry");
+        let serializer = Serializer::new(registry);
+        let class_id =
+            SemanticId::parse("dddddddd-dddd-4ddd-8ddd-dddddddddddd").expect("id");
+        let instance = MimInstance::new("Unit", class_id)
+            .expect("instance")
+            .with_property(PropertyValue::string("nameText", "Bravo"));
+
+        let xml = serializer
+            .serialize_instance(&instance, SerializationFormat::Xml)
+            .expect("xml");
+        let restored = serializer
+            .deserialize_instance(&xml, SerializationFormat::Xml)
+            .expect("restore");
+        assert_eq!(restored.class_name, "Unit");
+        assert_eq!(
+            restored
+                .property("nameText")
+                .and_then(|p| p.value.as_option())
+                .and_then(|v| v.as_str()),
+            Some("Bravo")
+        );
+
+        let mut store = InstanceStore::default();
+        store.insert(instance);
+        let store_xml = serializer
+            .serialize_store(&store, SerializationFormat::Xml)
+            .expect("store xml");
+        let restored_store = serializer
+            .deserialize_store(&store_xml, SerializationFormat::Xml)
+            .expect("store restore");
+        assert_eq!(restored_store.len(), 1);
     }
 
     fn minimal_manifest() -> mim_model::MimManifest {

@@ -8,7 +8,8 @@ use crate::error::{TransportError, TransportResult};
 use crate::filter::{instance_matches, parse_filter};
 use crate::message::{
     DeleteObjectRequest, DeleteObjectResponse, GetByFilterRequest, GetByFilterResponse,
-    GetByOidRequest, GetByOidResponse, PutObjectRequest, PutObjectResponse,
+    GetByOidRequest, GetByOidResponse, IesOperation, JournalEntry, PutObjectRequest,
+    PutObjectResponse, SyncResponse,
 };
 
 /// In-memory MIP4-IES exchange broker backing the REST service interface.
@@ -17,6 +18,8 @@ pub struct ExchangeBroker {
     registry: ModelRegistry,
     store: IndexMap<ObjectIdentifier, MimInstance>,
     inactive: HashSet<ObjectIdentifier>,
+    journal: Vec<JournalEntry>,
+    sequence: u64,
 }
 
 impl ExchangeBroker {
@@ -25,6 +28,57 @@ impl ExchangeBroker {
             registry,
             store: IndexMap::new(),
             inactive: HashSet::new(),
+            journal: Vec::new(),
+            sequence: 0,
+        }
+    }
+
+    pub fn from_snapshot(
+        registry: ModelRegistry,
+        instances: Vec<MimInstance>,
+        inactive: Vec<ObjectIdentifier>,
+        journal: Vec<JournalEntry>,
+        sequence: u64,
+    ) -> Self {
+        let store = instances
+            .into_iter()
+            .map(|instance| (instance.oid.clone(), instance))
+            .collect();
+        Self {
+            registry,
+            store,
+            inactive: inactive.into_iter().collect(),
+            journal,
+            sequence,
+        }
+    }
+
+    pub fn instances(&self) -> impl Iterator<Item = &MimInstance> {
+        self.store.values()
+    }
+
+    pub fn inactive_oids(&self) -> impl Iterator<Item = &ObjectIdentifier> {
+        self.inactive.iter()
+    }
+
+    pub fn journal(&self) -> &[JournalEntry] {
+        &self.journal
+    }
+
+    pub fn latest_sequence(&self) -> u64 {
+        self.sequence
+    }
+
+    pub fn sync_since(&self, since: u64) -> SyncResponse {
+        let entries: Vec<JournalEntry> = self
+            .journal
+            .iter()
+            .filter(|entry| entry.sequence > since)
+            .cloned()
+            .collect();
+        SyncResponse {
+            latest_sequence: self.sequence,
+            entries,
         }
     }
 
@@ -62,6 +116,7 @@ impl ExchangeBroker {
         let created = !self.store.contains_key(&oid);
         self.store.insert(oid.clone(), request.instance);
         self.inactive.remove(&oid);
+        self.record_journal(IesOperation::PutObject, oid.clone());
 
         Ok(PutObjectResponse { oid, created })
     }
@@ -96,7 +151,14 @@ impl ExchangeBroker {
                 .cloned()
                 .collect();
             let count = instances.len();
-            return Ok(GetByFilterResponse { instances, count });
+            let total = count;
+            let instances = paginate_instances(instances, request.offset, request.limit);
+            let count = instances.len();
+            return Ok(GetByFilterResponse {
+                instances,
+                count,
+                total,
+            });
         }
 
         if request.class_name.trim().is_empty() {
@@ -123,8 +185,14 @@ impl ExchangeBroker {
             .cloned()
             .collect();
 
+        let total = instances.len();
+        let instances = paginate_instances(instances, request.offset, request.limit);
         let count = instances.len();
-        Ok(GetByFilterResponse { instances, count })
+        Ok(GetByFilterResponse {
+            instances,
+            count,
+            total,
+        })
     }
 
     /// DeleteObject — soft-delete (mark inactive per MIP4-IES semantics).
@@ -137,10 +205,20 @@ impl ExchangeBroker {
         }
 
         let deleted = self.inactive.insert(request.oid.clone());
+        self.record_journal(IesOperation::DeleteObject, request.oid.clone());
         Ok(DeleteObjectResponse {
             oid: request.oid,
             deleted,
         })
+    }
+
+    fn record_journal(&mut self, operation: IesOperation, oid: ObjectIdentifier) {
+        self.sequence = self.sequence.saturating_add(1);
+        self.journal.push(JournalEntry {
+            sequence: self.sequence,
+            operation,
+            oid,
+        });
     }
 
     /// Publish an entire instance store via PutObject (bulk load).
@@ -167,6 +245,19 @@ impl ExchangeBroker {
         serializer
             .serialize_store(&store, SerializationFormat::Json)
             .map_err(TransportError::from)
+    }
+}
+
+pub(crate) fn paginate_instances(
+    instances: Vec<MimInstance>,
+    offset: Option<usize>,
+    limit: Option<usize>,
+) -> Vec<MimInstance> {
+    let offset = offset.unwrap_or(0);
+    let sliced: Vec<MimInstance> = instances.into_iter().skip(offset).collect();
+    match limit {
+        Some(limit) => sliced.into_iter().take(limit).collect(),
+        None => sliced,
     }
 }
 
@@ -247,6 +338,8 @@ mod tests {
                 class_name: String::new(),
                 property_name: None,
                 property_value: None,
+                limit: None,
+                offset: None,
             })
             .expect("filter");
         assert_eq!(filtered.count, 1);
@@ -276,6 +369,8 @@ mod tests {
                 filter: None,
                 property_name: Some("nameText".into()),
                 property_value: Some("HOSTILE-1".into()),
+                limit: None,
+                offset: None,
             })
             .expect("filter");
         assert_eq!(filtered.count, 1);

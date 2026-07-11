@@ -14,7 +14,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | ZTDF / ACP-240 Supp. 3–4 | Ready (encoding) | Partial (no KAS/ABAC) | Not ready |
 | ACP-240 full (Ed A + Supp. 5) | Partial | Not ready | Not ready |
 | DCS cross-domain | Ready (config file) | Partial | Not ready |
-| MIP4-IES transport | Partial (full REST CRUD) | Partial | Not ready |
+| MIP4-IES transport | Partial (REST + XML + journal) | Partial | Not ready |
 | Crypto / PKI | Conformance keys; FIPS build verified | PKI loaders exist; not default | RSA outside FIPS module |
 | MIM full manifest | 820 OWL attributes imported | Partial | Not accredited |
 | Audit | In-memory / file JSONL | Partial | WORM / HSM not implemented |
@@ -33,6 +33,9 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | STANAG 4778 NMBS profiles / detached fetch | `*_with_nmb()`, `FileDetachedLabelResolver` |
 | MIM metadata taxonomy missing | Core seed + compliance dimension |
 | MIM full manifest attributes (4 only) | Regenerated `mim-full-5.1.json` with 820 OWL attributes |
+| MIP4-IES XML wire + XSD | `mim-runtime` XML deserialize + `validate_exchange_xsd` |
+| MIP4-IES persistence + journal | `FileExchangeStore` + `GET /mip4-ies/v1/sync` |
+| MIP4-IES conformance runner | `mim-mip4-conformance` + `ainextgenc2 --mip4` |
 | FIPS build blocked on Rust 1.83 | `rust-toolchain.toml` 1.85 + `SecureRandom` import fix |
 | mimworld.org OWL 404 | DISO mirror + bundled `models/ontology/JC3IEDM.owl` fallback |
 
@@ -143,15 +146,16 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ## 7. Transport (MIP4-IES)
 
-### 7.1 In-memory exchange broker
+### 7.1 Persistent exchange store (implemented)
 
-- **Limitation:** No persistence or crash recovery.
+- **Implemented:** `FileExchangeStore` snapshots (`exchange.json`) + append-only `exchange.journal.jsonl`
+- **Limitation:** No distributed consensus or multi-node replication protocol beyond journal poll
 
-### 7.2 HTTP server — full REST CRUD (FMN progress)
+### 7.2 HTTP server — REST CRUD + wire formats (FMN progress)
 
-- **Implemented:** `PUT/GET/DELETE` on `/mip4-ies/v1/objects` (+ `:oid`); XPath subset filter via `?filter=//Class…`
+- **Implemented:** Full CRUD, XPath filter, pagination, `MIM-Version` header, `application/mim+json` / `application/mim+xml`, replication sync
 - **See:** [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md)
-- **Remaining:** Official MIP4 XML wire schemas, replication protocol, persistent store, conformance vectors
+- **Remaining:** Official MIP4 JSON-LD profile, full XPath, NATO-provided accreditation vectors, live HTTPS E2E in CI
 
 ### 7.3 Default trust store is conformance PKI
 
@@ -197,7 +201,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 1. **KAS client stub** with ABAC gate before CEK unwrap *(deferred)*
 2. **OpenTDF/ZTDF schema validation** + external interop *(deferred)*
 3. **Wire production PKI** into DCS scenario and HTTP server defaults (feature-flag conformance)
-4. **MIP4-IES replication + persistent store** for FMN accreditation
+4. **MIP4-IES JSON-LD wire profile** and NATO accreditation test vectors
 5. **WORM / SIEM connectors** for audit pipeline
 6. **Signed SPIF distribution** workflow
 7. **Authoritative MIM 5.1 OWL** when MIP republishes mimworld downloads
@@ -213,4 +217,5 @@ cargo test -p mim-crypto --features fips
 cargo run -p mim-import -- --source bundled:jc3iedm --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 cargo run -p ainextgenc2 -- --labeling
 cargo run -p ainextgenc2 -- --adatp
+cargo run -p ainextgenc2 -- --mip4
 ```
