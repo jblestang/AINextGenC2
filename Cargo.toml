@@ -13,6 +13,7 @@ members = [
     "crates/mim-dcs",
     "crates/mim-labeling-compliance",
     "crates/mim-adatp-conformance",
+    "crates/mim-transport",
     "crates/ainextgenc2",
 ]
 default-members = ["crates/ainextgenc2"]
@@ -37,6 +38,7 @@ mim-ztdf = { path = "crates/mim-ztdf" }
 mim-dcs = { path = "crates/mim-dcs" }
 mim-labeling-compliance = { path = "crates/mim-labeling-compliance" }
 mim-adatp-conformance = { path = "crates/mim-adatp-conformance" }
+mim-transport = { path = "crates/mim-transport" }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

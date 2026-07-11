@@ -15,6 +15,7 @@ dependencies = [
  "mim-model",
  "mim-runtime",
  "mim-stanag4774",
+ "mim-transport",
  "serde",
  "serde_json",
  "thiserror",
@@ -404,6 +405,19 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "mim-transport"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "mim-core",
+ "mim-model",
+ "mim-runtime",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
