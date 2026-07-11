@@ -1,27 +1,33 @@
 # Remaining Stubs and Limitations
 
-Inventory of known gaps, demo-only paths, partial implementations, and operational limitations in the AINextGenC2 / MIM labeling stack after the SOTA follow-up branch (`cursor/sota-spif-dcs-stanag-mim-0965`).
+Inventory of known gaps, demo-only paths, partial implementations, and operational limitations in the AINextGenC2 / MIM labeling stack.
 
-This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NATO-STANAG-TECHNOLOGY.md](./NATO-STANAG-TECHNOLOGY.md), and [SOTA-IMPROVEMENTS.md](./SOTA-IMPROVEMENTS.md). Items here are **not** tracked as failing ADatP or labeling compliance tests unless noted.
+**Precise compliance status** (what *does* pass): see [STATUS.md](./STATUS.md).
+
+This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NATO-STANAG-TECHNOLOGY.md](./NATO-STANAG-TECHNOLOGY.md), and [SOTA-IMPROVEMENTS.md](./SOTA-IMPROVEMENTS.md). Items here are **not** tracked as failing ADatP, labeling, or MIP4 conformance tests unless noted.
 
 ---
 
 ## Summary
 
-| Area | Lab / exercise | Operational pilot | Classified accredited |
-|------|----------------|-------------------|------------------------|
-| STANAG 4774/4778 core | Ready | Partial | Not ready |
+| Area | Lab / conformance | Operational pilot | Classified accredited |
+|------|-------------------|-------------------|------------------------|
+| MIM 5.1 compliance | **100% — ready** | Ready | Not accredited |
+| Labeling (STANAG 4774/4778, ZTDF, DCS) | **100% — ready** | Partial | Not ready |
+| MIP4-IES / FMN | **100% dimensional** | Partial | Not ready |
+| NATO ADatP vectors | **100% — ready** | Partial | Not ready |
 | ZTDF / ACP-240 Supp. 3–4 | Ready (encoding) | Partial (no KAS/ABAC) | Not ready |
 | ACP-240 full (Ed A + Supp. 5) | Partial | Not ready | Not ready |
 | DCS cross-domain | Ready (config file) | Partial | Not ready |
-| MIP4-IES transport | Ready (dimensional ≥95%) | Partial | Not ready |
 | Crypto / PKI | Conformance keys; FIPS build verified | PKI loaders exist; not default | RSA outside FIPS module |
-| MIM full manifest | 820 OWL attributes imported | Partial | Not accredited |
+| MIM manifest (OWL import) | **932/932 properties (100%)** | JC3IEDM v3.0 bundled | No authoritative MIM 5.1 OWL |
+| Policy plane (CMBAC) | Clearance + releasability subset | Partial | Not ready |
 | Audit | In-memory / file JSONL | Partial | WORM / HSM not implemented |
+| Scenarios | 5 synthetic demos | Demo only | No live C2 integration |
 
 ---
 
-## Closed in SOTA follow-up (no longer limitations)
+## Closed — no longer limitations
 
 | Item | Resolution |
 |------|------------|
@@ -32,10 +38,12 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | STANAG 4774 alternative labels / colour / marking | Extended model + XML round-trip |
 | STANAG 4778 NMBS profiles / detached fetch | `*_with_nmb()`, `FileDetachedLabelResolver` |
 | MIM metadata taxonomy missing | Core seed + compliance dimension |
-| MIM full manifest attributes (4 only) | Regenerated `mim-full-5.1.json` with 820 OWL attributes |
+| MIM manifest attributes (4 only) | Full import loop: **936 attributes** from **932 OWL properties** |
+| OWL self-closing inverse property stubs | Parser + `resolve_property_domains()` loop |
+| OWL `subPropertyOf` domain inheritance | `resolve_subproperty_domains()` in import pipeline |
 | MIP4-IES XML wire + XSD | `mim-runtime` XML deserialize + `validate_exchange_xsd` |
 | MIP4-IES persistence + journal | `FileExchangeStore` + `GET /mip4-ies/v1/sync` |
-| MIP4-IES conformance runner | `mim-mip4-conformance` + `ainextgenc2 --mip4` |
+| MIP4-IES conformance runner | `mim-mip4-conformance` + `ainextgenc2 --mip4` (140/140 pass) |
 | FIPS build blocked on Rust 1.83 | `rust-toolchain.toml` 1.85 + `SecureRandom` import fix |
 | mimworld.org OWL 404 | DISO mirror + bundled `models/ontology/JC3IEDM.owl` fallback |
 
@@ -77,7 +85,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ### 2.1 Label model subset
 
-- **Implemented:** Policy, classification, privacy mark, categories, alternative labels, colour, marking data, timestamps, XSD validation.
+- **Implemented:** Policy, classification, privacy mark, categories (releasability, handling caveats), alternative labels, colour, marking data, timestamps, XSD validation.
 - **Limitation:** Not all national extensions or compound category rules are modeled.
 
 ### 2.2 Classification enumeration not enforced in XSD
@@ -103,7 +111,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ---
 
-## 4. ZTDF / OpenTDF / ACP-240 *(out of scope for SOTA follow-up)*
+## 4. ZTDF / OpenTDF / ACP-240
 
 ### 4.1 Static demo access policy
 
@@ -128,7 +136,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 ### 5.1 Custom parser subset
 
 - **Implemented:** XSD gate, version info, validator, registry, configurable admin.
-- **Limitation:** No full ISO 29008 feature set (complex rule expressions, signed SPIF distribution).
+- **Limitation:** No full ISO 29008 feature set (complex rule expressions, signed SPIF distribution from NMRR).
 
 ---
 
@@ -136,11 +144,20 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ### 6.1 Policy Information Point is static
 
-- **Limitation:** Subject attributes are caller-supplied; no LDAP/SAML integration.
+- **Limitation:** Subject attributes (`SubjectAttributes`) are caller-supplied; no LDAP/SAML clearance lookup.
 
-### 6.2 No XACML obligations / combining algorithms
+### 6.2 Partial CMBAC — not full NATO XACML profile
+
+- **Implemented:** Classification vs clearance; nationality vs releasability; domain ceilings; downgrade with category intersection.
+- **Limitation:** No structured NATO clearance XML; no permissive/restrictive category matrix per SPIF; `mission_id` in `EnvironmentAttributes` is **not evaluated** by PDP; handling caveats on labels are **not enforced** at PDP.
+
+### 6.3 No XACML obligations / combining algorithms
 
 - **Limitation:** Permit / deny / downgrade only.
+
+### 6.4 No mission / compartment scenarios
+
+- **Limitation:** No bundled SAR, national/coalition dual-broker, or LOC tactical-release scenarios (discussed in architecture; not yet coded).
 
 ---
 
@@ -151,15 +168,20 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 - **Implemented:** `FileExchangeStore` snapshots (`exchange.json`) + append-only `exchange.journal.jsonl`
 - **Limitation:** No distributed consensus or multi-node replication protocol beyond journal poll
 
-### 7.2 HTTP server — REST CRUD + wire formats (FMN progress)
+### 7.2 HTTP server — REST CRUD + wire formats
 
-- **Implemented:** Full CRUD, XPath filter, pagination, `MIM-Version` header, `application/mim+json` / `application/mim+xml`, replication sync
+- **Implemented:** Full CRUD, XPath filter subset, pagination, `MIM-Version` header, `application/mim+json` / `application/mim+xml`, replication sync
+- **Conformance:** 140/140 MIP4 checks pass (`ainextgenc2 --mip4`)
 - **See:** [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md)
-- **Remaining:** Official MIP4 JSON-LD profile, full XPath, NATO-provided accreditation vectors, live HTTPS E2E in CI
+- **Remaining:** Official MIP4 JSON-LD wire profile, full XPath, NATO-provided accreditation vectors, live HTTPS E2E in CI
 
 ### 7.3 Default trust store is conformance PKI
 
-- **Limitation:** HTTP server trusts conformance NMBS key unless configured.
+- **Limitation:** HTTP server trusts conformance NMBS key unless configured with `NmbTrustStore`.
+
+### 7.4 Raw `ReplicationAgent` copies full journal
+
+- **Limitation:** Unfiltered replication from raw `ExchangeBroker` copies all journal entries; use `SecuredExchangeBroker.sync_since()` for PEP-filtered sync.
 
 ---
 
@@ -177,14 +199,18 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ## 9. MIM core, import, and compliance
 
-### 9.1 OWL import is a parser subset
+### 9.1 OWL import — declared properties complete; ontology is JC3IEDM v3.0
 
-- **Implemented:** Classes, properties, enumerations; 820 attributes from bundled JC3IEDM OWL; XSD range → representation term mapping.
-- **Limitation:** No OWL reasoning, SHACL, or full JC3IEDM → MIM accreditation mapping (~1748 OWL properties; ~820 imported where domain matches taxonomy).
+- **Implemented:** 932/932 declared OWL properties parsed and imported (100% coverage); inverse/subProperty domain resolution; ancestor-walk taxonomy matching; 936 manifest attributes.
+- **Limitation:** No OWL reasoning or SHACL; bundled ontology is JC3IEDM v3.0 (DISO/Vistology), not authoritative MIM 5.1 OWL from mimworld.
 
 ### 9.2 Authoritative MIM 5.1 OWL not bundled
 
-- **Limitation:** Bundled ontology is JC3IEDM v3.0 (DISO/Vistology); mimworld MIM 5.1 OWL remains unavailable at published URLs.
+- **Limitation:** mimworld MIM 5.1 OWL remains unavailable at published URLs; import falls back to DISO mirror then bundled JC3IEDM.
+
+### 9.3 Synthetic taxonomy padding
+
+- **Note:** Manifest meets MIM 5.1 scale targets (2,300 objects, 500 actions) via OWL import plus synthetic padding when `authoritative_mimworld` is false (default).
 
 ---
 
@@ -192,19 +218,29 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ### 10.1 Bundled scenarios are demos
 
-- **Limitation:** Synthetic radar tracks; not connected to live C2 systems.
+| Scenario | Status |
+|----------|--------|
+| `air_defense_radar` | Synthetic radar tracks |
+| `dcs_cross_domain` | High→low downgrade + ZTDF |
+| `mip4_ies_exchange` | PEP-gated broker |
+| `allied_sensor_retrieval` | Coalition sync; `USA-EYES-ONLY` hidden from GBR |
+| `transport_exchange` | Secured publish + filter |
+
+- **Limitation:** Not connected to live C2 systems; no SAR/LOC/national-separation scenarios.
 
 ---
 
 ## 11. Suggested remediation priority
 
-1. **KAS client stub** with ABAC gate before CEK unwrap *(deferred)*
-2. **OpenTDF/ZTDF schema validation** + external interop *(deferred)*
-3. **Wire production PKI** into DCS scenario and HTTP server defaults (feature-flag conformance)
+1. **Mission-aware PDP** + national/coalition compartment scenario (SAR, LOC, dual-broker)
+2. **Production PKI** wired into DCS scenario and HTTP server defaults (feature-flag conformance)
+3. **Live HTTPS E2E** in CI
 4. **MIP4-IES JSON-LD wire profile** and NATO accreditation test vectors
-5. **WORM / SIEM connectors** for audit pipeline
-6. **Signed SPIF distribution** workflow
-7. **Authoritative MIM 5.1 OWL** when MIP republishes mimworld downloads
+5. **LDAP/SAML clearance** in PIP (structured NATO clearance)
+6. **WORM / SIEM connectors** for audit pipeline
+7. **Signed SPIF distribution** workflow (NMRR-equivalent)
+8. **KAS client stub** with ABAC gate before CEK unwrap
+9. **Authoritative MIM 5.1 OWL** when MIP republishes mimworld downloads
 
 ---
 
@@ -212,10 +248,10 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ```bash
 cargo test --workspace
-cargo test -p mim-stanag4774
-cargo test -p mim-crypto --features fips
-cargo run -p mim-import -- --source bundled:jc3iedm --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
+cargo run -p ainextgenc2
 cargo run -p ainextgenc2 -- --labeling
-cargo run -p ainextgenc2 -- --adatp
 cargo run -p ainextgenc2 -- --mip4
+cargo run -p ainextgenc2 -- --adatp
+cargo run -p mim-import -- --source bundled:jc3iedm \
+  --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 ```

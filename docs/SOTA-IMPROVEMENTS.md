@@ -1,6 +1,8 @@
 # SOTA Improvements (SPIF, DCS, STANAG, MIM)
 
-Summary of state-of-the-art hardening delivered on branch `cursor/sota-spif-dcs-stanag-mim-0965`.
+Summary of state-of-the-art hardening delivered across branches `cursor/sota-spif-dcs-stanag-mim-0965` and `cursor/owl-attribute-import-loop-bb0a` (merged to `main`).
+
+**Current status:** see [STATUS.md](./STATUS.md).
 
 ## SPIF — XSD validation
 
@@ -19,7 +21,7 @@ Summary of state-of-the-art hardening delivered on branch `cursor/sota-spif-dcs-
 
 ## STANAG 4774
 
-- **Extended label model:** `alternative_labels`, `colour`, `marking_data`
+- **Extended label model:** `alternative_labels`, `colour`, `marking_data`, handling caveats
 - **XML:** serialize/deserialize `alternativeConfidentialityLabel`, `Colour`, `MarkingData`
 - **XSD:** `crates/mim-stanag4774/schemas/stanag4774-label.xsd` + `validate_stanag4774_xsd()`
 - **Codec:** `deserialize_with_options(..., validate_xsd)` gates XML labels on schema validation
@@ -30,21 +32,30 @@ Summary of state-of-the-art hardening delivered on branch `cursor/sota-spif-dcs-
 - **Detached labels:** `mim-stanag4778/src/detached.rs` — `FileDetachedLabelResolver`, `verify_detached_label()`
 - **Verify:** NMBS when assertion present on any profile; detached URI fetch + label match
 
-## MIM full handling
+## MIM full handling — OWL attribute import loop
 
-- **OWL:** `ObjectProperty` / `DatatypeProperty` with domain, range, labels; URI normalization for JC3IEDM
+- **OWL parser:** `ObjectProperty` / `DatatypeProperty` including self-closing inverse stubs; `inverseOf` + `subPropertyOf`
+- **Domain resolution:** `resolve_property_domains()` iterative loop until stable
+- **Taxonomy:** `ensure_property_domains_in_taxonomy()` + `ancestors_of()` domain walk
+- **Import loop:** `import_owl_attributes()` — 100% of 932 declared JC3IEDM properties
 - **Metadata taxonomy:** Reporter, Observer, OperationalAppraisal, ValidityPeriod, SecurityClassification in `mim-core-5.1.json`
-- **Full manifest:** `models/mim-full-5.1.json` regenerated from bundled `models/ontology/JC3IEDM.owl` (**820 attributes**)
+- **Full manifest:** `models/mim-full-5.1.json` — **936 attributes**, 3,740 elements, MIM 5.1 scale targets met
 - **Import fallback:** mimworld → DISO mirror → bundled OWL (`--source bundled:jc3iedm`)
-- **Compliance:** metadata dimension requires 5 subtypes + element coverage
+- **Coverage reporting:** `ImportReport` with `owl_properties_total`, `owl_attribute_coverage_ratio` (target 100%)
 
-## Follow-up deliverables
+## MIP4-IES / FMN
 
-- STANAG 4774 label XSD validation
-- Regenerated full manifest with OWL property import at scale
-- Bundled JC3IEDM OWL for offline/reproducible import
-- FIPS build on Rust 1.85 (`rust-toolchain.toml`, `mim-crypto` FIPS fix)
-- Updated [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md)
+- **Transport:** CRUD, XPath filter subset, pagination, replication sync, file persistence
+- **Conformance:** `mim-mip4-conformance` — **140/140 checks pass** (`ainextgenc2 --mip4`)
+
+## Compliance (all pass at 100%)
+
+| Suite | Result |
+|-------|--------|
+| MIM 5.1 (`ainextgenc2`) | 100% — 8/8 dimensions |
+| Labeling (`--labeling`) | 100% — 12/12 dimensions |
+| MIP4-IES (`--mip4`) | 100% — 140/140 checks |
+| ADatP (`--adatp`) | 100% — 39/39 tests |
 
 ## Verification
 
@@ -55,6 +66,12 @@ cargo test -p mim-stanag4774
 cargo test -p mim-crypto --features fips
 cargo run -p mim-import -- --source bundled:jc3iedm \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
+cargo run -p ainextgenc2
 cargo run -p ainextgenc2 -- --labeling
+cargo run -p ainextgenc2 -- --mip4
 cargo run -p ainextgenc2 -- --adatp
 ```
+
+## Remaining work
+
+See [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md) — primarily operational pilot items (PKI, LDAP/SAML PIP, mission-aware PDP, live HTTPS E2E, KAS/ABAC).
