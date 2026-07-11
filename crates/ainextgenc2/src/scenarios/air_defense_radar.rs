@@ -100,6 +100,10 @@ impl AirDefenseRadarScenario {
         Self::default()
     }
 
+    pub fn radar_name(&self) -> &str {
+        &self.radar_name
+    }
+
     /// Build MIM instances for the radar and its track/target detections.
     pub fn build_store(&self, registry: &ModelRegistry) -> MimResult<InstanceStore> {
         let mut store = InstanceStore::default();
