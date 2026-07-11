@@ -16,8 +16,8 @@ jobs:
         with:
           toolchain: "1.85"
       - uses: Swatinem/rust-cache@v2
-      - name: Install XML tooling for SPIF XSD validation
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      - name: Install build tooling for FIPS-validated AWS-LC
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils cmake golang-go
       - name: Run workspace tests
         run: cargo test --workspace
       - name: Run labeling compliance

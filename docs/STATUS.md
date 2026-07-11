@@ -85,7 +85,7 @@ Import pipeline:
 | DCS cross-domain guard | Ready (config) | Partial | Conformance keys in demos; no accredited guard |
 | MIP4-IES transport | Ready (100% dimensional) | Partial | No live HTTPS E2E in CI; JSON-LD wire profile |
 | Policy plane (PIP/PDP/PEP) | Ready (subset) | Partial | No full CMBAC; LDAP/SAML PIP; static PIP |
-| Crypto / PKI | Conformance + FIPS build path | Partial | Default `ring`; RSA outside FIPS module |
+| Crypto / PKI | FIPS 140-3 default + production env PKI | Partial | RSA outside FIPS module; HSM not integrated |
 | Audit | Durable envelope JSONL + SIEM export | Partial | No WORM media; HTTP SIEM is best-effort |
 | Scenarios | 5 demos | Demo only | Synthetic data; no live C2 integration |
 

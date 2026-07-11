@@ -48,23 +48,23 @@ Assertion bindings store `signed_label_xml` — the exact bytes signed — to su
 
 | Feature flag | Backend | AES-GCM / SHA-256 | RSA (NMBS/KAS) |
 |--------------|---------|-------------------|----------------|
-| `ring-backend` (default) | `ring` + `rsa` crate | ring | rsa crate |
+| `fips-validated` (default) | `aws-lc-rs/fips` | FIPS 140-3 module | rsa crate* |
 | `fips` | `aws-lc-rs` (non-FIPS build) | AWS-LC | rsa crate |
-| `fips-validated` | `aws-lc-rs/fips` | FIPS 140-3 module | rsa crate* |
+| `ring-backend` | `ring` + `rsa` crate | ring | rsa crate |
 
 \* RSA key operations remain in the `rsa` Rust crate outside the FIPS module boundary. For accredited deployments, place RSA operations in an approved HSM/KMS and supply keys via PKCS#8/SPKI through the PKI API below.
 
 Build examples:
 
 ```bash
-# Default (development)
+# Default — FIPS 140-3 validated module (requires Rust ≥ 1.85, cmake, Go)
 cargo build -p mim-crypto
 
-# AWS-LC module (AES/SHA inside AWS-LC)
-cargo build -p mim-crypto --features fips
+# AWS-LC module without validated boundary (faster lab builds)
+cargo build -p mim-crypto --no-default-features --features fips
 
-# FIPS 140-3 validated module (requires Rust ≥ 1.85, native AWS-LC FIPS build)
-cargo build -p mim-crypto --features fips-validated
+# Non-FIPS development only
+cargo build -p mim-crypto --no-default-features --features ring-backend
 ```
 
 ### Production PKI
