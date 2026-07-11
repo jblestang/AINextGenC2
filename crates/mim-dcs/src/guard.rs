@@ -1,5 +1,7 @@
-use mim_labeling::{
-    ClassificationLevel, ConfidentialityLabel, DomainId, LabelError, LabelResult, SecurityDomain,
+use mim_labeling::{ConfidentialityLabel, LabelResult, SecurityDomain};
+use mim_policy::{
+    PolicyDecisionPoint, PolicyEffect, PolicyEnforcementPoint, PolicyInformationPoint,
+    SubjectAttributes,
 };
 
 /// Decision from a cross-domain guard evaluation.
@@ -18,16 +20,41 @@ pub struct GuardResult {
     pub effective_label: Option<ConfidentialityLabel>,
 }
 
-/// Cross-domain guard enforcing DCS label policies.
+/// Cross-domain guard enforcing DCS label policies via the policy plane (PDP/PEP).
 #[derive(Clone, Debug)]
 pub struct CrossDomainGuard {
     source: SecurityDomain,
     target: SecurityDomain,
+    pep: PolicyEnforcementPoint,
 }
 
 impl CrossDomainGuard {
     pub fn new(source: SecurityDomain, target: SecurityDomain) -> Self {
-        Self { source, target }
+        let mut pap = mim_policy::PolicyAdministrationPoint::new(mim_policy::PolicyStore::new());
+        let _ = pap.register_domain(source.clone());
+        let _ = pap.register_domain(target.clone());
+        let _ = pap.add_cross_domain_policy(mim_policy::CrossDomainPolicy::new(
+            format!("{}-to-{}", source.id.0, target.id.0),
+            source.id.clone(),
+            target.id.clone(),
+        ));
+        let store = pap.into_store();
+        Self {
+            source,
+            target,
+            pep: PolicyEnforcementPoint::new(
+                PolicyInformationPoint::new(),
+                PolicyDecisionPoint::new(store),
+            ),
+        }
+    }
+
+    pub fn from_policy_plane(pep: PolicyEnforcementPoint, source: SecurityDomain, target: SecurityDomain) -> Self {
+        Self {
+            source,
+            target,
+            pep,
+        }
     }
 
     pub fn source(&self) -> &SecurityDomain {
@@ -38,87 +65,79 @@ impl CrossDomainGuard {
         &self.target
     }
 
+    pub fn pep(&self) -> &PolicyEnforcementPoint {
+        &self.pep
+    }
+
     pub fn evaluate(&self, label: &ConfidentialityLabel) -> LabelResult<GuardResult> {
-        label.validate()?;
+        let subject = SubjectAttributes::new("cross-domain-guard", label.classification);
+        let decision = self.pep.evaluate_cross_domain(
+            subject,
+            label,
+            &self.source,
+            &self.target,
+        )?;
 
-        for country in label.releasable_countries() {
-            if !self.target.accepts_country(&country) {
-                return Ok(GuardResult {
-                    decision: GuardDecision::Deny,
-                    reason: format!(
-                        "releasability to {country} not permitted in target domain {}",
-                        self.target.id.0
-                    ),
-                    effective_label: None,
-                });
-            }
-        }
-
-        if label.classification > self.target.max_classification {
-            if self.target.max_classification >= ClassificationLevel::Unclassified {
-                let mut downgraded = label.clone();
-                downgraded.classification = self.target.max_classification;
-                return Ok(GuardResult {
-                    decision: GuardDecision::Downgrade,
-                    reason: format!(
-                        "classification {} exceeds target domain max {}; downgrading to {}",
-                        label.classification.as_stanag_str(),
-                        self.target.max_classification.as_stanag_str(),
-                        downgraded.classification.as_stanag_str()
-                    ),
-                    effective_label: Some(downgraded),
-                });
-            }
-            return Ok(GuardResult {
-                decision: GuardDecision::Deny,
-                reason: format!(
-                    "classification {} exceeds target domain max {}",
-                    label.classification.as_stanag_str(),
-                    self.target.max_classification.as_stanag_str()
-                ),
-                effective_label: None,
-            });
-        }
-
-        Ok(GuardResult {
-            decision: GuardDecision::Allow,
-            reason: format!(
-                "label permitted from {} to {}",
-                self.source.id.0, self.target.id.0
-            ),
-            effective_label: Some(label.clone()),
-        })
+        Ok(map_decision(decision))
     }
 
     pub fn preset_high_to_low() -> Self {
-        Self::new(
-            SecurityDomain::new("DOMAIN-HIGH", "High Side", ClassificationLevel::Secret)
+        Self::from_policy_plane(
+            PolicyEnforcementPoint::from_preset_high_to_low(),
+            SecurityDomain::new("DOMAIN-HIGH", "High Side", mim_labeling::ClassificationLevel::Secret)
                 .with_releasable_to(vec!["USA".into(), "GBR".into(), "DEU".into()]),
-            SecurityDomain::new("DOMAIN-LOW", "Low Side", ClassificationLevel::Restricted)
-                .with_releasable_to(vec!["USA".into(), "GBR".into()]),
+            SecurityDomain::new(
+                "DOMAIN-LOW",
+                "Low Side",
+                mim_labeling::ClassificationLevel::Restricted,
+            )
+            .with_releasable_to(vec!["USA".into(), "GBR".into()]),
         )
     }
 
     pub fn preset_coalition() -> Self {
-        Self::new(
-            SecurityDomain::new("DOMAIN-NATO", "NATO Core", ClassificationLevel::Secret)
+        let pep = PolicyEnforcementPoint::new(
+            PolicyInformationPoint::new(),
+            PolicyDecisionPoint::new(mim_policy::PolicyStore::preset_coalition()),
+        );
+        Self::from_policy_plane(
+            pep,
+            SecurityDomain::new("DOMAIN-NATO", "NATO Core", mim_labeling::ClassificationLevel::Secret)
                 .with_releasable_to(vec![
                     "USA".into(),
                     "GBR".into(),
                     "DEU".into(),
                     "FRA".into(),
                 ]),
-            SecurityDomain::new("DOMAIN-PARTNER", "Partner Nation", ClassificationLevel::Secret)
-                .with_releasable_to(vec!["USA".into(), "GBR".into()]),
+            SecurityDomain::new(
+                "DOMAIN-PARTNER",
+                "Partner Nation",
+                mim_labeling::ClassificationLevel::Secret,
+            )
+            .with_releasable_to(vec!["USA".into(), "GBR".into()]),
         )
     }
 }
 
-pub fn validate_domain_pair(source: &DomainId, target: &DomainId) -> LabelResult<()> {
+fn map_decision(decision: mim_policy::PolicyDecision) -> GuardResult {
+    let (guard_decision, effective_label) = match decision.effect {
+        PolicyEffect::Permit => (GuardDecision::Allow, decision.effective_label),
+        PolicyEffect::Deny => (GuardDecision::Deny, None),
+        PolicyEffect::Downgrade => (GuardDecision::Downgrade, decision.effective_label),
+    };
+
+    GuardResult {
+        decision: guard_decision,
+        reason: decision.reason,
+        effective_label,
+    }
+}
+
+pub fn validate_domain_pair(source: &mim_labeling::DomainId, target: &mim_labeling::DomainId) -> LabelResult<()> {
     SecurityDomain::validate_id(&source.0)?;
     SecurityDomain::validate_id(&target.0)?;
     if source.0 == target.0 {
-        return Err(LabelError::CrossDomain(
+        return Err(mim_labeling::LabelError::CrossDomain(
             "source and target domains must differ for cross-domain transfer".into(),
         ));
     }
@@ -135,7 +154,7 @@ mod tests {
     #[test]
     fn allows_matching_label() {
         let guard = CrossDomainGuard::preset_high_to_low();
-        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Restricted)
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), mim_labeling::ClassificationLevel::Restricted)
             .with_category(CategoryMarking::releasable_to(vec!["USA".into()]));
         let result = guard.evaluate(&label).expect("eval");
         assert_eq!(result.decision, GuardDecision::Allow);
@@ -144,20 +163,20 @@ mod tests {
     #[test]
     fn downgrades_secret_to_restricted() {
         let guard = CrossDomainGuard::preset_high_to_low();
-        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret)
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), mim_labeling::ClassificationLevel::Secret)
             .with_category(CategoryMarking::releasable_to(vec!["USA".into()]));
         let result = guard.evaluate(&label).expect("eval");
         assert_eq!(result.decision, GuardDecision::Downgrade);
         assert_eq!(
             result.effective_label.expect("label").classification,
-            ClassificationLevel::Restricted
+            mim_labeling::ClassificationLevel::Restricted
         );
     }
 
     #[test]
     fn restricted_label_allowed_on_low_domain() {
         let guard = CrossDomainGuard::preset_high_to_low();
-        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Restricted)
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), mim_labeling::ClassificationLevel::Restricted)
             .with_category(CategoryMarking::releasable_to(vec!["USA".into()]));
         let result = guard.evaluate(&label).expect("eval");
         assert_eq!(result.decision, GuardDecision::Allow);
@@ -166,7 +185,7 @@ mod tests {
     #[test]
     fn denies_deu_on_low_domain() {
         let guard = CrossDomainGuard::preset_high_to_low();
-        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret)
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), mim_labeling::ClassificationLevel::Secret)
             .with_category(CategoryMarking::releasable_to(vec!["DEU".into()]));
         let result = guard.evaluate(&label).expect("eval");
         assert_eq!(result.decision, GuardDecision::Deny);
@@ -175,7 +194,7 @@ mod tests {
     #[test]
     fn denies_unauthorized_releasability() {
         let guard = CrossDomainGuard::preset_coalition();
-        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret)
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), mim_labeling::ClassificationLevel::Secret)
             .with_category(CategoryMarking::releasable_to(vec!["DEU".into()]));
         let result = guard.evaluate(&label).expect("eval");
         assert_eq!(result.decision, GuardDecision::Deny);

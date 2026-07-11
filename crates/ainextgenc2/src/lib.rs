@@ -17,6 +17,6 @@ pub mod stack;
 
 pub use scenarios::{
     AirDefenseRadarScenario, DcsCrossDomainScenario, DcsScenarioOutput, RadarDetection,
-    ScenarioOutput,
+    ScenarioOutput, TransportExchangeScenario, TransportScenarioOutput,
 };
 pub use stack::MimStack;

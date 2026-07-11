@@ -7,6 +7,7 @@ pub enum LabelingDimension {
     Stanag4778,
     Ztdf,
     DcsCrossDomain,
+    PolicyPlane,
     NatoPolicy,
     AssertionBinding,
 }

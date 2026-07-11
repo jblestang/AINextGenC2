@@ -13,8 +13,10 @@ dependencies = [
  "mim-labeling",
  "mim-labeling-compliance",
  "mim-model",
+ "mim-policy",
  "mim-runtime",
  "mim-stanag4774",
+ "mim-transport",
  "serde",
  "serde_json",
  "thiserror",
@@ -305,6 +307,7 @@ version = "0.1.0"
 dependencies = [
  "mim-core",
  "mim-labeling",
+ "mim-policy",
  "mim-runtime",
  "mim-stanag4774",
  "mim-stanag4778",
@@ -346,6 +349,7 @@ dependencies = [
  "mim-core",
  "mim-dcs",
  "mim-labeling",
+ "mim-policy",
  "mim-stanag4774",
  "mim-stanag4778",
  "mim-ztdf",
@@ -360,6 +364,19 @@ dependencies = [
  "chrono",
  "indexmap",
  "mim-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "mim-policy"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "mim-core",
+ "mim-labeling",
+ "mim-model",
  "serde",
  "serde_json",
  "thiserror",
@@ -404,6 +421,21 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "mim-transport"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "mim-core",
+ "mim-labeling",
+ "mim-model",
+ "mim-policy",
+ "mim-runtime",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]

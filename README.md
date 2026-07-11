@@ -17,6 +17,8 @@ A zero-panic, `Result`-driven Rust workspace implementing the semantic foundatio
 | `mim-stanag4778` | STANAG 4778 (ADatP-4778) metadata binding mechanism |
 | `mim-ztdf` | ZTDF / OpenTDF manifest packaging with NATO label assertions |
 | `mim-dcs` | Data-centric security cross-domain guard and transfer |
+| `mim-policy` | Policy plane: PIP, PAP/PRP, PDP, PEP (XACML-style access control) |
+| `mim-transport` | MIP4-IES transport layer (PutObject, GetByOID, GetByFilter, DeleteObject) |
 | `mim-labeling-compliance` | STANAG 4774/4778, ZTDF, and DCS compliance checker |
 | `ainextgenc2` | Integration library and CLI |
 
@@ -74,8 +76,11 @@ cargo clippy --workspace -- -D warnings
 
 ```
 models/mim-core-5.1.json  →  mim-model (registry)  →  mim-runtime (instances)
-                                        ↓
-                              mim-compliance (report)
+                                        ↓                        ↓
+                              mim-compliance (report)    mim-transport (MIP4-IES REST)
+                                                                   ↓ PEP
+                              mim-labeling → mim-policy (PIP/PDP) → mim-dcs (cross-domain PEP)
+                                        ↑ PAP/PRP
 ```
 
 To reach 100% coverage, export the official MIM 5.1+ OWL/XSD products to the manifest format and load via `MimStack::load_path()`.
@@ -109,6 +114,25 @@ cargo run --example dcs_cross_domain
 The demo downgrades a SECRET/REL USA,GBR radar exchange from a high-side domain to RESTRICTED on the low side, emitting STANAG 4774 XML and a ZTDF manifest.
 
 > **Note:** NATO standard references are STANAG **4774** (label syntax) and STANAG **4778** (binding). These are commonly grouped with ZTDF (ACP-240 / OpenTDF) for DCS Level 1–3 interoperability.
+
+### MIP4-IES transport layer
+
+Publishes MIM instances through the MIP4-IES exchange service interface (PutObject, GetByOID, GetByFilter, DeleteObject) with REST binding paths:
+
+```bash
+cargo run --example mip4_ies_exchange
+```
+
+The demo publishes the air defense radar store (5 instances) to a PEP-gated exchange broker, queries targets by filter, and serializes the active exchange payload. Instances are labeled SECRET/REL USA,GBR; the operator must hold sufficient clearance or PutObject is denied.
+
+### Policy plane (PIP / PAP / PDP / PEP)
+
+| Component | Crate | Role |
+|-----------|-------|------|
+| PIP | `mim-policy` | Assembles subject, resource, and environment attributes |
+| PAP / PRP | `mim-policy` | Authors and stores domain + cross-domain policies |
+| PDP | `mim-policy` | Evaluates permit / deny / downgrade decisions |
+| PEP | `mim-policy` + `mim-transport` / `mim-dcs` | Enforces decisions at transport and cross-domain boundaries |
 
 ## License
 

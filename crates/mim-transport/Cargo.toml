@@ -1,6 +1,6 @@
 [package]
-name = "mim-dcs"
-description = "Data-centric security cross-domain solution for labeled MIM exchanges"
+name = "mim-transport"
+description = "MIP4-IES transport layer for MIM exchange over REST"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,11 +9,11 @@ rust-version.workspace = true
 
 [dependencies]
 mim-core = { workspace = true }
-mim-labeling = { workspace = true }
+mim-model = { workspace = true }
 mim-runtime = { workspace = true }
-mim-stanag4774 = { workspace = true }
-mim-stanag4778 = { workspace = true }
-mim-ztdf = { workspace = true }
 mim-policy = { workspace = true }
+mim-labeling = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+thiserror = { workspace = true }
+indexmap = { workspace = true }
