@@ -1,0 +1,9 @@
+<ConfidentialityLabel xmlns="urn:nato:stanag:4774:confidentialitymetadatalabel:1:0" CreationTime="2017-03-14T09:00:00Z">
+<ConfidentialityInformation>
+<PolicyIdentifier>ACME</PolicyIdentifier>
+<Classification>CONFIDENTIAL</Classification>
+<Category TagName="Sensitive" Type="RESTRICTIVE">
+<GenericValue>RED</GenericValue>
+</Category>
+</ConfidentialityInformation>
+</ConfidentialityLabel>

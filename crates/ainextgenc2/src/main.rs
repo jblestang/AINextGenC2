@@ -2,6 +2,7 @@ use std::env;
 use std::process;
 
 use ainextgenc2::MimStack;
+use mim_adatp_conformance::AdatpConformanceRunner;
 use mim_compliance::ComplianceDimension;
 use mim_labeling_compliance::LabelingComplianceChecker;
 
@@ -15,7 +16,12 @@ fn main() {
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let labeling_only = args.iter().any(|a| a == "--labeling");
+    let adatp_only = args.iter().any(|a| a == "--adatp");
     let path = args.get(1).filter(|a| !a.starts_with("--")).map(String::as_str);
+
+    if adatp_only {
+        return run_adatp_conformance();
+    }
 
     if labeling_only {
         return run_labeling_compliance();
@@ -124,6 +130,46 @@ fn run_labeling_compliance() -> Result<(), Box<dyn std::error::Error>> {
             &dimension.message,
             ok,
         );
+    }
+    if !report.is_fully_compliant {
+        process::exit(2);
+    }
+    Ok(())
+}
+
+fn run_adatp_conformance() -> Result<(), Box<dyn std::error::Error>> {
+    let report = AdatpConformanceRunner::new().evaluate();
+    println!("NATO ADatP Conformance (STANAG 4774/4778, ZTDF)");
+    println!("================================================");
+    println!(
+        "Overall: {:.1}% — {}/{} tests ({})",
+        report.overall_score * 100.0,
+        report.total_passed(),
+        report.total_tests(),
+        if report.is_fully_compliant {
+            "FULLY COMPLIANT"
+        } else {
+            "NOT YET COMPLIANT"
+        }
+    );
+    println!();
+    for suite in &report.suites {
+        let status = if suite.failed == 0 { "OK" } else { "FAIL" };
+        println!(
+            "  [{status}] {}: {}/{} passed",
+            suite.name, suite.passed, suite.total
+        );
+        for test in &suite.tests {
+            let test_status = if test.passed { "pass" } else { "FAIL" };
+            println!("      [{test_status}] {} — {}", test.id, test.message);
+        }
+    }
+    if !report.recommendations.is_empty() {
+        println!();
+        println!("Recommendations:");
+        for (idx, item) in report.recommendations.iter().enumerate() {
+            println!("  {}. {item}", idx + 1);
+        }
     }
     if !report.is_fully_compliant {
         process::exit(2);

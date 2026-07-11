@@ -22,6 +22,7 @@ mim-runtime = { workspace = true }
 mim-compliance = { workspace = true }
 mim-labeling = { workspace = true }
 mim-labeling-compliance = { workspace = true }
+mim-adatp-conformance = { workspace = true }
 mim-dcs = { workspace = true }
 mim-stanag4774 = { workspace = true }
 serde = { workspace = true }

@@ -6,12 +6,13 @@ use crate::classification::ClassificationLevel;
 use crate::error::{LabelError, LabelResult};
 use crate::policy::LabelPolicy;
 
-/// STANAG 4774 category type (restrictive or permissive).
+/// STANAG 4774 category type.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum CategoryType {
     Restrictive,
     Permissive,
+    Informative,
 }
 
 /// A category marking such as releasability or handling caveat.

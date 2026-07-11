@@ -7,7 +7,11 @@ use crate::error::{LabelError, LabelResult};
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ClassificationLevel {
     Unmarked,
+    /// ACME SPIF day-zero classification.
+    Public,
     Unclassified,
+    /// ACME SPIF internal-use classification.
+    Internal,
     Restricted,
     Confidential,
     Secret,
@@ -17,7 +21,9 @@ pub enum ClassificationLevel {
 impl ClassificationLevel {
     pub const ALL: &'static [Self] = &[
         Self::Unmarked,
+        Self::Public,
         Self::Unclassified,
+        Self::Internal,
         Self::Restricted,
         Self::Confidential,
         Self::Secret,
@@ -25,13 +31,19 @@ impl ClassificationLevel {
     ];
 
     pub fn parse(value: &str) -> LabelResult<Self> {
-        match value {
+        let normalized = value.trim().to_ascii_uppercase();
+        match normalized.as_str() {
             "UNMARKED" => Ok(Self::Unmarked),
+            "PUBLIC" => Ok(Self::Public),
             "UNCLASSIFIED" | "NATO UNCLASSIFIED" => Ok(Self::Unclassified),
+            "INTERNAL" => Ok(Self::Internal),
             "RESTRICTED" | "NATO RESTRICTED" => Ok(Self::Restricted),
-            "CONFIDENTIAL" | "NATO CONFIDENTIAL" => Ok(Self::Confidential),
+            "CONFIDENTIAL" | "NATO CONFIDENTIAL" | "NATO/EAPC CONFIDENTIAL"
+            | "NATO/KFOR CONFIDENTIAL" => Ok(Self::Confidential),
             "SECRET" | "NATO SECRET" => Ok(Self::Secret),
-            "COSMIC TOP SECRET" | "COSMIC_TOP_SECRET" => Ok(Self::CosmicTopSecret),
+            "TOP SECRET" | "COSMIC TOP SECRET" | "COSMIC_TOP_SECRET" => {
+                Ok(Self::CosmicTopSecret)
+            }
             other => Err(LabelError::InvalidClassification(other.to_owned())),
         }
     }
@@ -39,7 +51,9 @@ impl ClassificationLevel {
     pub fn as_stanag_str(self) -> &'static str {
         match self {
             Self::Unmarked => "UNMARKED",
+            Self::Public => "PUBLIC",
             Self::Unclassified => "UNCLASSIFIED",
+            Self::Internal => "INTERNAL",
             Self::Restricted => "RESTRICTED",
             Self::Confidential => "CONFIDENTIAL",
             Self::Secret => "SECRET",
