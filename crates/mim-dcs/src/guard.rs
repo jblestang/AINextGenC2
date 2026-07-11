@@ -95,6 +95,22 @@ impl CrossDomainGuard {
         )
     }
 
+    /// Cross-domain guard whose releasability constraints are SPIF-administered.
+    pub fn from_spif_registry(registry: mim_spif::SpifRegistry) -> LabelResult<Self> {
+        let pap = mim_policy::PolicyAdministrationPoint::with_spif_registry(registry.clone())
+            .map_err(|e| mim_labeling::LabelError::CrossDomain(e.to_string()))?;
+        let (source, target) = mim_policy::guard_domains_from_spif(&registry)
+            .map_err(|e| mim_labeling::LabelError::CrossDomain(e.to_string()))?;
+        Ok(Self::from_policy_plane(
+            PolicyEnforcementPoint::new(
+                PolicyInformationPoint::new(),
+                PolicyDecisionPoint::new(pap.into_store()),
+            ),
+            source,
+            target,
+        ))
+    }
+
     pub fn preset_coalition() -> Self {
         let pep = PolicyEnforcementPoint::new(
             PolicyInformationPoint::new(),

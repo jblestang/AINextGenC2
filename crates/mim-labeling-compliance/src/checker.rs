@@ -350,7 +350,8 @@ impl LabelingComplianceChecker {
     }
 
     fn dimension_audit_trail(&self) -> LabelingDimensionResult {
-        let audit = AuditLog::memory();
+        let keys = Self::keys();
+        let audit = AuditLog::memory().with_signing_key(keys.signing_key().clone());
         let record = AuditRecord::new(
             AuditEventKind::CrossDomainEvaluate,
             "checker",
@@ -359,7 +360,11 @@ impl LabelingComplianceChecker {
             "evaluate",
             "audit trail smoke test",
         );
-        let ok = audit.record(record).is_ok() && audit.len() == 1;
+        let ok = audit.record(record).is_ok()
+            && audit.len() == 1
+            && audit.envelopes().len() == 1
+            && audit.verify_chain().is_ok()
+            && audit.export_siem().is_ok();
         LabelingDimensionResult {
             dimension: LabelingDimension::AuditTrail,
             status: status_from_score(if ok { 1.0 } else { 0.0 }, self.requirements.require_audit),
@@ -375,18 +380,21 @@ impl LabelingComplianceChecker {
     fn dimension_fips_crypto(&self) -> LabelingDimensionResult {
         let provider = selected_provider();
         let name = provider.name();
-        let score = if name.contains("ring") || name.contains("FIPS") {
-            1.0
+        let (score, detail) = if name.contains("FIPS") {
+            (1.0, "FIPS-capable AWS-LC module active")
+        } else if name.contains("ring") {
+            (
+                1.0,
+                "ring backend active — rebuild with `mim-crypto/fips-validated` for FIPS 140-3 module",
+            )
         } else {
-            0.0
+            (0.0, "unknown crypto provider")
         };
         LabelingDimensionResult {
             dimension: LabelingDimension::FipsCrypto,
             status: status_from_score(score, self.requirements.require_fips_crypto),
             score,
-            message: format!(
-                "Crypto provider: {name} (select FIPS via mim-crypto `fips` feature at build time)"
-            ),
+            message: format!("Crypto provider: {name}. {detail}"),
         }
     }
 

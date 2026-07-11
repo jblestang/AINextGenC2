@@ -58,6 +58,8 @@ impl CryptoProvider for FipsProvider {
             .map(|der| der.to_vec())
             .map_err(|e| CryptoError::Operation(e.to_string()))
     }
+
+    fn sign_rsa_pss_sha256(&self, key: &SigningKey, message: &[u8]) -> CryptoResult<Vec<u8>> {
         let private = RsaPrivateKey::from_pkcs8_der(key.der())
             .map_err(|e| CryptoError::InvalidKey(e.to_string()))?;
         let signing_key = PssSigningKey::<Sha256>::new(private);

@@ -12,8 +12,10 @@
     clippy::unimplemented
 )]
 
+mod chain;
 mod log;
 mod record;
 
+pub use chain::{export_siem_json, AuditEnvelope, AuditSignature};
 pub use log::{AuditLog, AuditSink, FileAuditSink, MemoryAuditSink};
 pub use record::{AuditEventKind, AuditRecord};

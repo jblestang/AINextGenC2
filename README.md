@@ -14,13 +14,24 @@ A zero-panic, `Result`-driven Rust workspace implementing the semantic foundatio
 | `mim-compliance` | Multi-dimensional compliance checker and reporting |
 | `mim-labeling` | Format-agnostic confidentiality labels, policies, security domains |
 | `mim-stanag4774` | STANAG 4774 (ADatP-4774) confidentiality metadata label codec |
-| `mim-stanag4778` | STANAG 4778 (ADatP-4778) metadata binding mechanism |
-| `mim-ztdf` | ZTDF / OpenTDF manifest packaging with NATO label assertions |
+| `mim-stanag4778` | STANAG 4778 (ADatP-4778) metadata binding mechanism (NMBS RSA-PSS) |
+| `mim-crypto` | NMBS signatures, AES-256-GCM, RSA-OAEP key wrap, PKI (`NmbKeyRing`, `NmbTrustStore`) |
+| `mim-spif` | XML-SPIF policy ingestion and validation (NATO, ACME, CAPCO-US, UK demo) |
+| `mim-audit` | Hash-chained, NMBS-signable audit trail with SIEM export |
+| `mim-ztdf` | ZTDF / OpenTDF encrypted ZIP packaging with NATO label assertions |
 | `mim-dcs` | Data-centric security cross-domain guard and transfer |
-| `mim-policy` | Policy plane: PIP, PAP/PRP, PDP, PEP (XACML-style access control) |
-| `mim-transport` | MIP4-IES transport layer (PutObject, GetByOID, GetByFilter, DeleteObject) |
-| `mim-labeling-compliance` | STANAG 4774/4778, ZTDF, and DCS compliance checker |
+| `mim-policy` | Policy plane: PIP, PAP/PRP, PDP, PEP + SPIF administration |
+| `mim-transport` | MIP4-IES transport layer + STANAG 4778 REST envelope helpers |
+| `mim-transport-http` | HTTPS/mTLS MIP4-IES server (Axum + rustls) |
+| `mim-import` | OWL import from mimworld.org or local files |
+| `mim-adatp-conformance` | NATO ADatP automated conformance test runner |
+| `mim-labeling-compliance` | STANAG 4774/4778, ZTDF, DCS, SPIF, audit compliance (12 dimensions) |
 | `ainextgenc2` | Integration library and CLI |
+
+### NATO/STANAG documentation
+
+- **[System architecture — what it does](docs/NATO-STANAG-SYSTEM.md)** — subsystems, flows, deployment tiers
+- **[Technology reference — how it does it](docs/NATO-STANAG-TECHNOLOGY.md)** — algorithms, crates, PKI, build flags, test matrix
 
 ### Zero-panic policy
 
@@ -43,16 +54,19 @@ cargo run -p ainextgenc2 -- /path/to/mim-manifest.json
 
 Both MIM 5.1 and labeling (STANAG 4774/4778, ZTDF, DCS) must be fully compliant for exit code 0.
 
-The workspace loads `models/mim-full-5.1.json` when present (generated from JC3IEDM OWL + MIM core seed). Regenerate with:
+The workspace loads `models/mim-full-5.1.json` when present. Regenerate from **mimworld.org** (authoritative MIP source):
 
 ```bash
-curl -sL -o /tmp/jc3iedm.owl \
-  https://raw.githubusercontent.com/city-artificial-intelligence/diso/main/information-exchange/JC3IEDM/JC3IEDM.owl
-cargo run -p mim-import -- --owl /tmp/jc3iedm.owl \
+cargo run -p mim-import -- --source mimworld \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 ```
 
-For authoritative MIM 5.1+ semantics, replace the import source with official mimworld.org OWL/XSD exports when available.
+Or from a local OWL file:
+
+```bash
+cargo run -p mim-import -- --owl /path/to/JC3IEDM.owl \
+  --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
+```
 
 Targets for full compliance (MIM 5.1 scale):
 

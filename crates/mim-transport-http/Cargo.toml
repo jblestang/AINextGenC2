@@ -9,7 +9,10 @@ rust-version.workspace = true
 
 [dependencies]
 mim-core = { workspace = true }
+mim-labeling = { workspace = true }
 mim-runtime = { workspace = true }
+mim-model = { workspace = true }
+mim-policy = { workspace = true }
 mim-transport = { workspace = true }
 mim-stanag4778 = { workspace = true }
 mim-crypto = { workspace = true }

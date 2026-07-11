@@ -93,7 +93,12 @@ impl SpifPolicy {
             categories: vec![SpifCategory {
                 name: "Releasable to".into(),
                 category_type: SpifCategoryType::Permissive,
-                allowed_values: vec![],
+                allowed_values: vec![
+                    "USA".into(),
+                    "GBR".into(),
+                    "DEU".into(),
+                    "FRA".into(),
+                ],
             }],
             validations: vec![],
         }

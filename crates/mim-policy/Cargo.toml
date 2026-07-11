@@ -12,6 +12,7 @@ mim-core = { workspace = true }
 mim-labeling = { workspace = true }
 mim-model = { workspace = true }
 mim-audit = { workspace = true }
+mim-spif = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

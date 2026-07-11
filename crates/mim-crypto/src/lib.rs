@@ -21,6 +21,7 @@
 mod error;
 mod hash;
 mod keys;
+mod pki;
 mod provider;
 mod symmetric;
 
@@ -33,6 +34,7 @@ mod fips_backend;
 pub use error::{CryptoError, CryptoResult};
 pub use hash::{sha256, sha256_base64};
 pub use keys::{conformance_keypair, KeyPair, PublicKey, SigningKey, VerifyingKey};
+pub use pki::{NmbKeyRing, NmbTrustStore};
 pub use provider::{
     sign_nmb_binding, verify_nmb_binding, CryptoProvider, selected_provider, NMBS_ALGORITHM,
     NMBS_ALGORITHM_URI,

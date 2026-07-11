@@ -89,7 +89,7 @@ impl AssertionBinding {
 }
 
 fn sign_binding(
-    label: &ConfidentialityLabel,
+    _label: &ConfidentialityLabel,
     label_xml: &str,
     payload_digest: &str,
     signing_key: &SigningKey,
