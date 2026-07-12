@@ -16,8 +16,13 @@ mod chain;
 mod log;
 mod record;
 mod siem;
+mod worm;
 
 pub use chain::{export_siem_json, AuditEnvelope, AuditSignature};
-pub use log::{AuditLog, AuditSink, FileAuditSink, MemoryAuditSink};
+pub use log::{AuditError, AuditLog, AuditResult, AuditSink, FileAuditSink, MemoryAuditSink};
+pub use worm::WormAuditSink;
 pub use record::{AuditEventKind, AuditRecord};
-pub use siem::{forward_log_http, forward_siem_http, forward_siem_to_file};
+pub use siem::{
+    forward_log_http, forward_log_http_accredited, forward_log_syslog_accredited,
+    forward_siem_http, forward_siem_to_file, forward_syslog_tcp, forward_with_retry,
+};

@@ -28,6 +28,7 @@ pub struct CrossDomainGuard {
     source: SecurityDomain,
     target: SecurityDomain,
     pep: PolicyEnforcementPoint,
+    accredited: bool,
 }
 
 impl CrossDomainGuard {
@@ -48,15 +49,30 @@ impl CrossDomainGuard {
                 PolicyInformationPoint::new(),
                 PolicyDecisionPoint::new(store),
             ),
+            accredited: false,
         }
     }
 
-    pub fn from_policy_plane(pep: PolicyEnforcementPoint, source: SecurityDomain, target: SecurityDomain) -> Self {
+    pub fn from_policy_plane(
+        pep: PolicyEnforcementPoint,
+        source: SecurityDomain,
+        target: SecurityDomain,
+    ) -> Self {
         Self {
             source,
             target,
             pep,
+            accredited: false,
         }
+    }
+
+    pub fn with_accredited(mut self, accredited: bool) -> Self {
+        self.accredited = accredited;
+        self
+    }
+
+    pub fn is_accredited(&self) -> bool {
+        self.accredited
     }
 
     pub fn source(&self) -> &SecurityDomain {

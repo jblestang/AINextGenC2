@@ -15,6 +15,8 @@ pub enum AuditError {
     Io(String),
     #[error("audit record is sealed and cannot be modified")]
     Sealed,
+    #[error("WORM audit integrity violation: {0}")]
+    Tampered(String),
 }
 
 pub type AuditResult<T> = Result<T, AuditError>;
@@ -155,6 +157,11 @@ impl AuditLog {
 
     pub fn file(path: impl AsRef<Path>) -> AuditResult<Self> {
         Ok(Self::new(FileAuditSink::open(path)?))
+    }
+
+    /// WORM-backed audit log with append-only immutability enforcement.
+    pub fn worm(path: impl AsRef<Path>) -> AuditResult<Self> {
+        Ok(Self::new(crate::worm::WormAuditSink::open(path)?))
     }
 
     /// Reload a hash-chained audit log from envelope JSON lines on disk.

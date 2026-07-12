@@ -44,6 +44,7 @@ impl CrossDomainTransfer {
         audit: &AuditLog,
     ) -> LabelResult<TransferOutcome> {
         validate_domain_pair(&self.source_domain, &self.target_domain)?;
+        let fail_closed = guard.is_accredited();
 
         if self.inbound_binding.binding.method != BindingMethod::Assertion {
             let record = AuditRecord::new(
@@ -56,7 +57,7 @@ impl CrossDomainTransfer {
             )
             .with_domains(self.source_domain.clone(), self.target_domain.clone())
             .with_payload_digest(sha256_base64(self.payload.as_bytes()));
-            let _ = audit.record(record);
+            record_audit(audit, record, fail_closed)?;
             return Err(LabelError::CrossDomain(
                 "cross-domain transfer requires STANAG 4778 assertion binding".into(),
             ));
@@ -77,7 +78,7 @@ impl CrossDomainTransfer {
         )
         .with_domains(self.source_domain.clone(), self.target_domain.clone())
         .with_payload_digest(sha256_base64(self.payload.as_bytes()));
-        let _ = audit.record(evaluate_record);
+        record_audit(audit, evaluate_record, fail_closed)?;
 
         let result = guard.evaluate(&self.label)?;
 
@@ -123,7 +124,7 @@ impl CrossDomainTransfer {
                 .with_domains(self.source_domain.clone(), self.target_domain.clone())
                 .with_effective_label(effective)
                 .with_payload_digest(sha256_base64(self.payload.as_bytes()));
-                let _ = audit.record(transfer_record);
+                record_audit(audit, transfer_record, fail_closed)?;
 
                 Ok(TransferOutcome::Released {
                     label_xml,
@@ -142,7 +143,7 @@ impl CrossDomainTransfer {
                     "cross-domain transfer denied by guard",
                 )
                 .with_domains(self.source_domain.clone(), self.target_domain.clone());
-                let _ = audit.record(record);
+                record_audit(audit, record, fail_closed)?;
                 Ok(TransferOutcome::Denied {
                     reason: result.reason,
                 })
@@ -152,5 +153,19 @@ impl CrossDomainTransfer {
 
     pub fn guard_result(&self, guard: &CrossDomainGuard) -> LabelResult<GuardResult> {
         guard.evaluate(&self.label)
+    }
+}
+
+fn record_audit(
+    audit: &AuditLog,
+    record: AuditRecord,
+    fail_closed: bool,
+) -> LabelResult<()> {
+    match audit.record(record) {
+        Ok(()) => Ok(()),
+        Err(err) if fail_closed => Err(LabelError::CrossDomain(format!(
+            "accredited guard audit unavailable: {err}"
+        ))),
+        Err(_) => Ok(()),
     }
 }

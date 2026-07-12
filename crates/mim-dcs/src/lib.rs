@@ -20,7 +20,7 @@ pub mod guard;
 pub mod labeled_exchange;
 pub mod transfer;
 
-pub use config::{bundled_config_path, DcsConfig, DomainConfig};
+pub use config::{bundled_config_path, AuditConfig, AuditSinkType, DcsConfig, DomainConfig};
 pub use guard::{CrossDomainGuard, GuardDecision, GuardResult};
 pub use labeled_exchange::LabeledMimExchange;
 pub use transfer::{CrossDomainTransfer, TransferOutcome};
