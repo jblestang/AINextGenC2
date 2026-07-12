@@ -83,7 +83,7 @@ Import pipeline:
 | STANAG 4774/4778 | Ready | Partial | Full national extensions in production IdP |
 | ZTDF (ACP-240 Supp. 3–4) | Ready (encoding + ABAC decrypt gate) | Partial | DCS target receive uses PEP gate; remote KAS protocol open |
 | DCS cross-domain guard | Ready (config + audit) | Partial | Accredited guard profile (pilot); formal accreditation open |
-| MIP4-IES transport | Ready (100% dimensional + HTTPS/JSON-LD E2E) | Ready | NATO accreditation vectors; full XPath |
+| MIP4-IES transport | Ready (100% dimensional + JSON-LD wire + HTTPS E2E) | Ready | NATO official shipped vectors; full XPath |
 | Policy plane (PIP/PDP/PEP) | Ready (caveats + mission + LDAP/SAML PIP) | Ready | No full CMBAC; production IdP wiring |
 | Crypto / PKI | FIPS 140-3 default + separate NMB/KAS keys | Ready | RSA outside FIPS module; HSM not integrated |
 | Audit | Durable envelope JSONL + SIEM export | Partial | WORM sink + accredited SIEM retry/syslog (pilot) |
@@ -156,7 +156,7 @@ Full inventory of gaps, closed items, and ROI-ranked implementation order:
 **Top ROI picks (Tier 1):**
 
 1. National/coalition dual-broker SAR/LOC scenario
-2. MIP4-IES JSON-LD wire profile + NATO accreditation vectors
+2. Remote KAS protocol (Track C)
 3. Live LDAP/SAML IdP integration (beyond fixture PIP)
 
 MIP4-IES transport detail: [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md).

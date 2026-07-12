@@ -134,4 +134,29 @@ mod tests {
                 .expect("unwrap");
         assert_eq!(restored.instance.class_name, "Target");
     }
+
+    #[test]
+    fn put_object_jsonld_payload_round_trip() {
+        let keys = conformance_keypair().expect("keys");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let request = PutObjectRequest {
+            instance: labeled_target(),
+        };
+        let envelope = wrap_put_object_with_format(
+            &label,
+            &request,
+            keys.signing_key(),
+            WirePayloadFormat::JsonLd,
+        )
+        .expect("wrap");
+        assert!(envelope.payload.contains("@context"));
+        assert!(envelope.payload.contains("mim:data"));
+        let restored = unwrap_put_object_with_format(
+            &envelope,
+            keys.verifying_key(),
+            Some(WirePayloadFormat::JsonLd),
+        )
+        .expect("unwrap");
+        assert_eq!(restored.instance.class_name, "Target");
+    }
 }

@@ -10,8 +10,12 @@ use serde_json::Value;
 
 use crate::instance::{InstanceStore, MimInstance, PropertyValue};
 
-/// JSON-LD `@context` document for MIM 5.1 wire profile.
+/// JSON-LD `@context` document URL for MIM 5.1 wire profile.
 pub const MIM_JSONLD_CONTEXT: &str = "https://www.mimworld.org/mim/5.1.0/context.jsonld";
+
+/// Bundled JSON-LD context document shipped with the runtime (offline validation).
+pub const MIM_JSONLD_CONTEXT_DOCUMENT: &str =
+    include_str!("../schemas/mim-5.1-context.jsonld");
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SerializationFormat {
     Json,

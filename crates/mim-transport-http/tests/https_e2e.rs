@@ -5,10 +5,10 @@ use mim_labeling::{ClassificationLevel, ConfidentialityLabel, LabelPolicy};
 use mim_model::Metadata;
 use mim_policy::SubjectAttributes;
 use mim_runtime::MimInstance;
-use mim_transport::envelope::wrap_put_object;
+use mim_transport::envelope::{wrap_put_object, wrap_put_object_with_format};
 use mim_transport::message::PutObjectRequest;
 use mim_transport::secured::SecuredExchangeBroker;
-use mim_transport::wire::{HEADER_MIM_VERSION, MIM_VERSION};
+use mim_transport::wire::{HEADER_MIM_VERSION, MIM_VERSION, WirePayloadFormat};
 use mim_transport::{encode_oid_for_path, ExchangeBroker};
 use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer, TlsIdentity};
 
@@ -230,6 +230,77 @@ async fn https_get_returns_jsonld_when_accepted() {
     let text = get_response.text().await.expect("body");
     assert!(text.contains("@context"));
     assert!(text.contains("mim:semanticId"));
+
+    server_task.abort();
+    let _ = server_task.await;
+}
+
+#[tokio::test]
+async fn https_put_get_jsonld_lifecycle() {
+    let keys = conformance_keypair().expect("keys");
+    let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+    let instance = labeled_target("HOSTILE-JSONLD-LIFE");
+    let envelope = wrap_put_object_with_format(
+        &label,
+        &PutObjectRequest { instance },
+        keys.signing_key(),
+        WirePayloadFormat::JsonLd,
+    )
+    .expect("wrap");
+    assert!(envelope.payload.contains("mim:data"));
+    let body = serde_json::to_string(&envelope).expect("json");
+
+    let tls = TlsIdentity::from_pem(
+        include_bytes!("../fixtures/test-server.crt"),
+        include_bytes!("../fixtures/test-server.key"),
+    )
+    .expect("tls");
+
+    let server = HttpExchangeServer::new(
+        std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+        tls,
+    )
+    .with_config(HttpExchangeConfig::conformance().expect("config"));
+
+    let (addr, server_task) = server
+        .serve_ephemeral(secured_broker())
+        .await
+        .expect("serve");
+
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .expect("client");
+
+    let base = format!("https://{addr}");
+    let put_response = client
+        .put(format!("{base}/mip4-ies/v1/objects"))
+        .header("content-type", "application/json")
+        .header(
+            "X-NATO-Confidentiality-Label",
+            &envelope.originator_confidentiality_label,
+        )
+        .body(body)
+        .send()
+        .await
+        .expect("put");
+    assert_eq!(put_response.status(), reqwest::StatusCode::CREATED);
+
+    let put_json: mim_transport::message::PutObjectResponse =
+        put_response.json().await.expect("put json");
+    let stored_oid = encode_oid_for_path(put_json.oid.as_str());
+
+    let get_response = client
+        .get(format!("{base}/mip4-ies/v1/objects/{stored_oid}"))
+        .header("accept", mim_transport::wire::MEDIA_MIM_JSONLD)
+        .send()
+        .await
+        .expect("get");
+    assert_eq!(get_response.status(), reqwest::StatusCode::OK);
+    let text = get_response.text().await.expect("body");
+    assert!(text.contains("@context"));
+    assert!(text.contains("mim:semanticId"));
+    assert!(text.contains("HOSTILE-JSONLD-LIFE"));
 
     server_task.abort();
     let _ = server_task.await;

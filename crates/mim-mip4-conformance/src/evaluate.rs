@@ -3,7 +3,8 @@ use mim_crypto::conformance_keypair;
 use mim_labeling::{ClassificationLevel, ConfidentialityLabel, LabelPolicy};
 use mim_model::ModelRegistry;
 use mim_runtime::{
-    validate_exchange_xsd, validate_serialized_instance, InstanceStore, MimInstance, PropertyValue,
+    validate_exchange_xsd, validate_instance_jsonld_str, validate_instance_json_schema_str,
+    validate_serialized_instance, InstanceStore, MimInstance, PropertyValue, MIM_JSONLD_CONTEXT_DOCUMENT,
     SerializationFormat, Serializer, Validator,
 };
 use mim_transport::envelope::{unwrap_put_object_with_format, wrap_put_object_with_format};
@@ -24,6 +25,7 @@ use mim_policy::SubjectAttributes;
 
 use crate::dimension::{Mip4Dimension, Mip4DimensionResult, ACCREDITATION_THRESHOLD};
 use crate::report::Mip4TestResult;
+use crate::vectors::{Mip4WireFormat, MIP4_ACCREDITATION_VECTORS};
 
 type TestFn = fn() -> bool;
 
@@ -341,6 +343,18 @@ static MESSAGE_SCHEMAS: &[(&str, TestFn)] = tests! {
         serializer.serialize_store(&store, SerializationFormat::Xml).ok()
             .and_then(|xml| serializer.deserialize_store(&xml, SerializationFormat::Xml).ok())
             .is_some_and(|items| items.len() == 1)
+    },
+    jsonld_schema_valid => {
+        let serializer = Serializer::new(test_registry());
+        serializer
+            .serialize_instance(&sample_target("SC-18"), SerializationFormat::JsonLd)
+            .ok()
+            .is_some_and(|doc| validate_instance_jsonld_str(&doc).is_ok())
+    },
+    jsonld_context_bundled => MIM_JSONLD_CONTEXT_DOCUMENT.contains("semanticId"),
+    jsonld_schema_invalid => {
+        let bad = serde_json::json!({"@context": "https://example.invalid"});
+        validate_instance_jsonld_str(&bad.to_string()).is_err()
     },
 };
 
@@ -719,8 +733,9 @@ static ACCREDITATION: &[(&str, TestFn)] = tests! {
     vector_idempotent => REPLICATION[6].1(),
     vector_two_node => REPLICATION[14].1(),
     vector_schema_json => MESSAGE_SCHEMAS[1].1(),
-    vector_schema_jsonld => MESSAGE_SCHEMAS[5].1(),
-    vector_nato_fixture => parse_nato_fixture(),
+    vector_schema_jsonld => MESSAGE_SCHEMAS[5].1() && MESSAGE_SCHEMAS[20].1(),
+    vector_nato_accreditation => run_accreditation_vectors(),
+    vector_nato_envelope_jsonld => accreditation_envelope_jsonld_roundtrip(),
     vector_full_stack => {
         let mut publisher = ExchangeBroker::new(test_registry());
         let mut consumer = ExchangeBroker::new(test_registry());
@@ -732,9 +747,80 @@ static ACCREDITATION: &[(&str, TestFn)] = tests! {
     },
 };
 
-fn parse_nato_fixture() -> bool {
-    const FIXTURE: &str = include_str!("../fixtures/nato-mip4-target.xml");
-    FIXTURE.contains("Target") && FIXTURE.contains("nameText")
+fn run_accreditation_vectors() -> bool {
+    let serializer = Serializer::new(test_registry());
+    for vector in MIP4_ACCREDITATION_VECTORS {
+        if !vector.expect_valid {
+            continue;
+        }
+        let format = vector.format.serialization_format();
+        let validation_ok = match vector.format {
+            Mip4WireFormat::Xml => vector.payload.contains("Target"),
+            Mip4WireFormat::Json => validate_instance_json_schema_str(vector.payload).is_ok(),
+            Mip4WireFormat::JsonLd => validate_instance_jsonld_str(vector.payload).is_ok(),
+        };
+        if !validation_ok {
+            return false;
+        }
+        let instance = match serializer.deserialize_instance(vector.payload, format) {
+            Ok(instance) => instance,
+            Err(_) => return false,
+        };
+        if validate_serialized_instance(&instance).is_err() {
+            return false;
+        }
+        let mut broker = ExchangeBroker::new(test_registry());
+        let oid = instance.oid.clone();
+        if broker.put_object(PutObjectRequest { instance }).is_err() {
+            return false;
+        }
+        if broker.get_by_oid(GetByOidRequest { oid }).is_err() {
+            return false;
+        }
+    }
+    true
+}
+
+fn accreditation_envelope_jsonld_roundtrip() -> bool {
+    let keys = match conformance_keypair() {
+        Ok(keys) => keys,
+        Err(_) => return false,
+    };
+    let vector = match MIP4_ACCREDITATION_VECTORS
+        .iter()
+        .find(|entry| entry.id == "nato-mip4-target-jsonld")
+    {
+        Some(vector) => vector,
+        None => return false,
+    };
+    let serializer = Serializer::new(test_registry());
+    let instance = match serializer.deserialize_instance(
+        vector.payload,
+        SerializationFormat::JsonLd,
+    ) {
+        Ok(instance) => instance,
+        Err(_) => return false,
+    };
+    let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+    let request = PutObjectRequest { instance };
+    let envelope = match wrap_put_object_with_format(
+        &label,
+        &request,
+        keys.signing_key(),
+        WirePayloadFormat::JsonLd,
+    ) {
+        Ok(envelope) => envelope,
+        Err(_) => return false,
+    };
+    unwrap_put_object_with_format(&envelope, keys.verifying_key(), Some(WirePayloadFormat::JsonLd))
+        .map(|restored| {
+            restored
+                .instance
+                .properties
+                .iter()
+                .any(|property| property.name == "nameText")
+        })
+        .unwrap_or(false)
 }
 
 fn envelope_roundtrip(format: WirePayloadFormat) -> bool {

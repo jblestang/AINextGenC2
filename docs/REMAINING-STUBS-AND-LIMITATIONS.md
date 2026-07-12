@@ -51,7 +51,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | **SPIF** | Parser subset; no signed SPIF distribution (NMRR workflow) | Policy admin is file-based, not centrally signed |
 | **Policy plane** | PIP is caller-supplied (no LDAP/SAML); no full CMBAC matrix; no XACML obligations | Clearance comes from application, not enterprise IdP |
 | **DCS** | Accredited guard profile (pilot); conformance keys in lab demos; no dual-broker national/coalition separation | Exercise-ready; formal accreditation open |
-| **MIP4-IES** | No JSON-LD wire profile in CI; XPath subset only; no NATO-provided accreditation vectors; journal poll only | 100% dimensional conformance; operational interop gaps remain |
+| **MIP4-IES** | XPath subset only; NATO *official* shipped vectors open (internal baseline runner in place) | 100% dimensional conformance; full XPath remains |
 | **Crypto / PKI** | Default `ring`; NMBS/KAS keys collapsed in demos; no HSM | Keys exported as PEM/DER |
 | **Audit** | In-memory fallback when `[audit]` unset; HTTP SIEM has no auth/retry/syslog; not WORM | Durable JSONL works; accredited logging pipeline incomplete |
 | **MIM import** | JC3IEDM v3.0 bundled (not authoritative MIM 5.1 OWL); no OWL reasoning/SHACL | Scale targets met; ontology source is fallback |
@@ -87,7 +87,8 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | No live HTTPS E2E in CI | `mim-transport-http/tests/https_e2e.rs` + `.github/workflows/ci.yml` |
 | In-memory-only coalition federation | `HttpFederationClient` + `federation_e2e` + allied scenario `MIM_FEDERATION_HTTP=1` |
 | Caller-supplied subject only (no PIP) | Fixture LDAP PIP + live LDAP + SAML bearer (`SubjectDirectory`, `saml_pip`) |
-| No JSON-LD wire profile in CI | `serialize` JSON-LD tests + `get_by_oid_returns_jsonld` + `https_get_returns_jsonld` |
+| No JSON-LD wire profile in CI | JSON-LD schema validation, PUT/GET/filter E2E, bundled `@context` document |
+| NATO accreditation vector stub | `mim-mip4-conformance/src/vectors.rs` — XML/JSON/JSON-LD fixtures + broker CRUD runner |
 | KAS unwrap without ABAC gate on DCS path | `ZtdfPackage::decrypt_with_policy`; `CrossDomainTransfer::receive_ztdf_on_target` |
 | NMBS and KAS keys collapsed in demos | Separate `conformance_key_ring()` / `conformance_kas_keypair()` hierarchies |
 
@@ -222,7 +223,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 - **Implemented:** Full CRUD, XPath filter subset, pagination, `MIM-Version` header, `application/mim+json` / `application/mim+xml`, replication sync
 - **Conformance:** 140/140 MIP4 checks pass (`ainextgenc2 --mip4`)
 - **See:** [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md)
-- **Remaining:** Official MIP4 JSON-LD wire profile, full XPath, NATO-provided accreditation vectors
+- **Remaining:** Full XPath, NATO *official* shipped accreditation vectors (drop-in under `fixtures/nato-provided/`)
 
 ### 7.3 Default trust store is conformance PKI
 
@@ -290,7 +291,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | 2 | Production PKI defaults (`MIM_NMB_TRUST`, feature-flag conformance) | Coalition exercise | Low–medium | **Done** |
 | 3 | Live HTTPS E2E in CI | Coalition exercise / MIP4 pilot | Medium | **Done** |
 | 4 | LDAP/SAML PIP (structured NATO clearance) | Coalition exercise | Medium | **Partial** (fixture + live LDAP + SAML bearer) |
-| 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | **Partial** (wire + CI E2E; NATO vectors open) |
+| 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | **Done** (internal baseline vectors; NATO official drop-in path documented) |
 | 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | **Partial** (local + HTTP KAS stub; PEP gate on DCS receive) |
 | 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | **Partial** (`WormAuditSink`, accredited guard profile; hardware WORM + TLS/auth open) |
 | 8 | Signed SPIF distribution (NMRR-equivalent workflow) | Classified accredited | High | Open |
@@ -304,15 +305,11 @@ Tier 1 item **#1 (dual-broker SAR/LOC scenario) is deferred** per project direct
 
 ### Tier 1 — implement next
 
-**1. MIP4-IES JSON-LD wire profile (incremental)**  
-- **Why:** Largest MIP4 transport gap independent of NATO shipping vectors.  
-- **Effort:** Medium–high.
-
-**2. Live LDAP/SAML IdP integration**  
+**1. Live LDAP/SAML IdP integration**  
 - **Why:** Fixture LDAP PIP is in place; live IdP unlocks operational clearance lookup.  
 - **Effort:** Medium.
 
-**3. KAS client stub + ABAC gate before CEK unwrap**  
+**2. KAS client stub + ABAC gate before CEK unwrap**  
 - **Why:** Main path to ACP-240 full; ZTDF encoding is ready.  
 - **Effort:** High.
 
