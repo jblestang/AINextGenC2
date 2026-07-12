@@ -1,0 +1,67 @@
+{
+  "oid": "urn:uuid:nato-fixture-target-001",
+  "className": "Target",
+  "classSemanticId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "metadata": {
+    "reporter": {
+      "name": {
+        "kind": "absent"
+      },
+      "role": {
+        "kind": "absent"
+      },
+      "organisation": {
+        "kind": "absent"
+      }
+    },
+    "observer": {
+      "name": {
+        "kind": "absent"
+      },
+      "role": {
+        "kind": "absent"
+      }
+    },
+    "appraisal": {
+      "confidence": {
+        "kind": "absent"
+      },
+      "credibility": {
+        "kind": "absent"
+      },
+      "reliability": {
+        "kind": "absent"
+      }
+    },
+    "validity": {
+      "start": {
+        "kind": "absent"
+      },
+      "end": {
+        "kind": "absent"
+      }
+    },
+    "security": {
+      "policy": {
+        "kind": "absent"
+      },
+      "classification": {
+        "kind": "absent"
+      },
+      "releasability": {
+        "kind": "absent"
+      }
+    }
+  },
+  "properties": [
+    {
+      "name": "nameText",
+      "semanticId": null,
+      "value": {
+        "kind": "value",
+        "value": "HOSTILE-NATO-1"
+      }
+    }
+  ],
+  "associations": {}
+}

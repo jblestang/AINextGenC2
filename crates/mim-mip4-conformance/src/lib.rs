@@ -17,7 +17,9 @@ pub mod dimension;
 pub mod evaluate;
 pub mod report;
 pub mod runner;
+pub mod vectors;
 
 pub use dimension::{Mip4Dimension, Mip4DimensionResult, ACCREDITATION_THRESHOLD};
 pub use report::{Mip4ConformanceReport, Mip4SuiteResult, Mip4TestResult};
 pub use runner::Mip4ConformanceRunner;
+pub use vectors::{Mip4AccreditationVector, Mip4WireFormat, MIP4_ACCREDITATION_VECTORS};

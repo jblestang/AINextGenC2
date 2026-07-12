@@ -289,14 +289,19 @@ pub async fn handle_put(
     envelope: RestEnvelope,
 ) -> TransportResult<PutObjectResponse> {
     let payload_format = headers
-        .get(CONTENT_TYPE)
+        .get("X-MIM-Payload-Format")
         .and_then(|value| value.to_str().ok())
         .and_then(format_from_content_type)
         .or_else(|| {
-            headers
-                .get("X-MIM-Payload-Format")
-                .and_then(|value| value.to_str().ok())
-                .and_then(format_from_content_type)
+            let detected = mim_transport::detect_payload_format(&envelope.payload);
+            if detected != WirePayloadFormat::Json {
+                Some(detected)
+            } else {
+                headers
+                    .get(CONTENT_TYPE)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(format_from_content_type)
+            }
         })
         .unwrap_or_else(|| mim_transport::detect_payload_format(&envelope.payload));
 
@@ -882,5 +887,99 @@ mod tests {
         let text = String::from_utf8(body.to_vec()).expect("utf8");
         assert!(text.contains("@context"));
         assert!(text.contains("mim:semanticId"));
+    }
+
+    #[tokio::test]
+    async fn put_object_accepts_jsonld_payload() {
+        use mim_transport::envelope::wrap_put_object_with_format;
+        use mim_transport::wire::WirePayloadFormat;
+
+        let keys = conformance_keypair().expect("keys");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let instance = labeled_target("HOSTILE-JSONLD-PUT");
+        let envelope = wrap_put_object_with_format(
+            &label,
+            &PutObjectRequest { instance },
+            keys.signing_key(),
+            WirePayloadFormat::JsonLd,
+        )
+        .expect("wrap");
+        assert!(envelope.payload.contains("@context"));
+        let body = serde_json::to_string(&envelope).expect("json");
+
+        let app = exchange_router(test_app_state());
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/mip4-ies/v1/objects")
+                    .header("content-type", "application/json")
+                    .header(
+                        "X-NATO-Confidentiality-Label",
+                        &envelope.originator_confidentiality_label,
+                    )
+                    .body(Body::from(body))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(response.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn get_by_filter_returns_jsonld_when_accepted() {
+        let keys = conformance_keypair().expect("keys");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let instance = labeled_target("HOSTILE-FILTER-LD");
+        let envelope = wrap_put_object(
+            &label,
+            &PutObjectRequest { instance },
+            keys.signing_key(),
+        )
+        .expect("wrap");
+        let body = serde_json::to_string(&envelope).expect("json");
+
+        let app = exchange_router(test_app_state());
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/mip4-ies/v1/objects")
+                    .header("content-type", "application/json")
+                    .header(
+                        "X-NATO-Confidentiality-Label",
+                        &envelope.originator_confidentiality_label,
+                    )
+                    .body(Body::from(body))
+                    .expect("request"),
+            )
+            .await
+            .expect("put");
+
+        let filter_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/mip4-ies/v1/objects?filter=//Target[@nameText='HOSTILE-FILTER-LD']")
+                    .header("accept", MEDIA_MIM_JSONLD)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(filter_response.status(), StatusCode::OK);
+        assert_eq!(
+            filter_response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some(MEDIA_MIM_JSONLD)
+        );
+        let body = axum::body::to_bytes(filter_response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let text = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(text.contains("@context"));
+        assert!(text.contains("HOSTILE-FILTER-LD"));
     }
 }

@@ -22,8 +22,11 @@ Legacy query form remains supported: `?className=Target&propertyName=nameText&pr
 |--------|------------|-----------|
 | MIM JSON | `application/mim+json` | Default for REST JSON responses |
 | MIM XML | `application/mim+xml` | Select via `Accept: application/mim+xml` on GET |
+| MIM JSON-LD | `application/ld+json` | Select via `Accept: application/ld+json` on GET; PUT envelope payloads with `@context` |
 
 All responses include `MIM-Version: 5.1.0`.
+
+JSON-LD wire profile uses bundled context (`crates/mim-runtime/schemas/mim-5.1-context.jsonld`) and structural validation (`validate_instance_jsonld`).
 
 PutObject envelope payload may contain JSON or XML MIM instance bodies; format is detected from payload structure or `Content-Type` / `X-MIM-Payload-Format`.
 
@@ -107,7 +110,7 @@ Use `mim_transport::encode_oid_for_path()`.
 
 **Result:** **140/140 checks pass** — exit code 0, **FULLY COMPLIANT** (verified 2026-07-11).
 
-Operational pilot gaps (JSON-LD wire profile, live HTTPS E2E, NATO-provided vectors) remain; see [Remaining FMN gaps](#remaining-fmn-gaps) and [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md).
+Operational pilot gaps (full XPath, NATO *official* shipped vectors) remain; see [Remaining FMN gaps](#remaining-fmn-gaps) and [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md).
 
 ## Verification
 
@@ -121,10 +124,8 @@ cargo run -p ainextgenc2 --example mip4_ies_exchange
 
 | Gap | Priority |
 |-----|----------|
-| Official MIP4-IES JSON-LD profile on wire | Medium |
 | Full XPath filter language | Medium |
 | Peer-to-peer replication protocol (beyond journal poll) | Medium |
-| Live HTTPS E2E in CI | Medium |
-| NATO-provided MIP4-IES accreditation test vectors | High |
+| NATO *official* shipped MIP4-IES accreditation test vectors | High (drop-in path: `fixtures/nato-provided/`) |
 
 See [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md).

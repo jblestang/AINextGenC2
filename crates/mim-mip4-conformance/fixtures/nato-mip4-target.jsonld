@@ -1,0 +1,74 @@
+{
+  "@context": "https://www.mimworld.org/mim/5.1.0/context.jsonld",
+  "@id": "urn:uuid:nato-fixture-target-001",
+  "@type": "mim:Target",
+  "mim:data": {
+    "associations": {},
+    "className": "Target",
+    "classSemanticId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "metadata": {
+      "appraisal": {
+        "confidence": {
+          "kind": "absent"
+        },
+        "credibility": {
+          "kind": "absent"
+        },
+        "reliability": {
+          "kind": "absent"
+        }
+      },
+      "observer": {
+        "name": {
+          "kind": "absent"
+        },
+        "role": {
+          "kind": "absent"
+        }
+      },
+      "reporter": {
+        "name": {
+          "kind": "absent"
+        },
+        "organisation": {
+          "kind": "absent"
+        },
+        "role": {
+          "kind": "absent"
+        }
+      },
+      "security": {
+        "classification": {
+          "kind": "absent"
+        },
+        "policy": {
+          "kind": "absent"
+        },
+        "releasability": {
+          "kind": "absent"
+        }
+      },
+      "validity": {
+        "end": {
+          "kind": "absent"
+        },
+        "start": {
+          "kind": "absent"
+        }
+      }
+    },
+    "oid": "urn:uuid:nato-fixture-target-001",
+    "properties": [
+      {
+        "name": "nameText",
+        "semanticId": null,
+        "value": {
+          "kind": "value",
+          "value": "HOSTILE-NATO-1"
+        }
+      }
+    ]
+  },
+  "mim:modelVersion": "5.1.0",
+  "mim:semanticId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+}
