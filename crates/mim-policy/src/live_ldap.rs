@@ -2,8 +2,6 @@
 
 use std::time::Duration;
 
-use mim_labeling::ClassificationLevel;
-
 use crate::context::SubjectAttributes;
 use crate::error::{PolicyError, PolicyResult};
 use crate::ldap_pip::{LdapPipConfig, LdapSubjectEntry};
@@ -16,11 +14,7 @@ const ATTR_MISSION: &str = "natoMissionId";
 /// Search a live LDAP directory for a principal and map attributes to subject.
 pub fn search_principal(config: &LdapPipConfig, principal: &str) -> PolicyResult<SubjectAttributes> {
     let ldap_cfg = &config.ldap;
-    let filter_template = ldap_cfg
-        .search_filter
-        .as_deref()
-        .unwrap_or("(uid={principal})");
-    let filter = filter_template.replace("{principal}", principal);
+    let filter = build_search_filter(config, principal);
 
     if ldap_cfg.server.starts_with("http://") || ldap_cfg.server.starts_with("https://") {
         return search_http_gateway(&ldap_cfg.server, principal, &filter);
@@ -100,7 +94,7 @@ fn search_ldap3(
         .or_else(|| attrs.get("cn"))
         .and_then(|v| v.first())
         .cloned()
-        .unwrap_or_else(|| principal.to_owned());
+        .unwrap_or_else(|| principal_uid_for_search(principal));
 
     let ldap_entry = LdapSubjectEntry {
         principal: principal.to_owned(),
@@ -111,4 +105,56 @@ fn search_ldap3(
         mission_id: attrs.get(ATTR_MISSION).and_then(|v| v.first()).cloned(),
     };
     ldap_entry.to_subject_attributes()
+}
+
+/// Extract the `uid` token from an FMN principal DN or bare subject id.
+fn principal_uid_for_search(principal: &str) -> String {
+    let trimmed = principal.trim();
+    if let Some(rest) = trimmed.strip_prefix("uid=") {
+        return rest
+            .split(',')
+            .next()
+            .unwrap_or(trimmed)
+            .to_owned();
+    }
+    trimmed.to_owned()
+}
+
+pub(crate) fn build_search_filter(config: &LdapPipConfig, principal: &str) -> String {
+    let ldap_cfg = &config.ldap;
+    let filter_template = ldap_cfg
+        .search_filter
+        .as_deref()
+        .unwrap_or("(uid={principal})");
+    let uid = principal_uid_for_search(principal);
+    filter_template.replace("{principal}", &uid)
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use super::*;
+    use crate::ldap_pip::{LdapPipConfig, LdapServerConfig};
+
+    #[test]
+    fn search_filter_uses_uid_from_principal_dn() {
+        let config = LdapPipConfig {
+            ldap: LdapServerConfig {
+                server: "ldap://localhost".into(),
+                base_dn: "ou=operators,dc=nato,dc=int".into(),
+                bind_dn: None,
+                search_filter: Some("(uid={principal})".into()),
+                fixture_mode: false,
+            },
+            entries_file: None,
+            cert_mappings: vec![],
+            cert_fingerprint_mappings: vec![],
+            default_domain_id: None,
+        };
+        let filter = build_search_filter(
+            &config,
+            "uid=gbr-allied-analyst,ou=GBR,ou=operators,dc=nato,dc=int",
+        );
+        assert_eq!(filter, "(uid=gbr-allied-analyst)");
+    }
 }

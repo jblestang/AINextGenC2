@@ -1,0 +1,17 @@
+# FMN coalition operator tree (mirrors config/fmn-ldap-entries.toml)
+
+dn: ou=operators,dc=nato,dc=int
+objectClass: organizationalUnit
+ou: operators
+
+dn: ou=USA,ou=operators,dc=nato,dc=int
+objectClass: organizationalUnit
+ou: USA
+
+dn: ou=GBR,ou=operators,dc=nato,dc=int
+objectClass: organizationalUnit
+ou: GBR
+
+dn: ou=DEU,ou=operators,dc=nato,dc=int
+objectClass: organizationalUnit
+ou: DEU

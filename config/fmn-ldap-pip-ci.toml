@@ -1,0 +1,26 @@
+# FMN coalition LDAP PIP — live OpenLDAP (CI / local docker-compose.ldap-ci.yml).
+# Mirrors config/fmn-ldap-pip.toml cert mappings; fixture_mode=false queries real LDAP.
+
+[ldap]
+server = "ldap://127.0.0.1:389"
+base_dn = "ou=operators,dc=nato,dc=int"
+bind_dn = "cn=admin,dc=nato,dc=int"
+search_filter = "(uid={principal})"
+fixture_mode = false
+default_domain_id = "DOMAIN-HIGH"
+
+[[cert_mappings]]
+cn = "usa-analyst.nato.mil"
+principal = "uid=usa-sensor-operator,ou=USA,ou=operators,dc=nato,dc=int"
+
+[[cert_mappings]]
+cn = "usa-sensor.nato.mil"
+principal = "uid=usa-sensor-operator,ou=USA,ou=operators,dc=nato,dc=int"
+
+[[cert_mappings]]
+cn = "gbr-analyst.nato.mil"
+principal = "uid=gbr-allied-analyst,ou=GBR,ou=operators,dc=nato,dc=int"
+
+[[cert_mappings]]
+cn = "deu-analyst.nato.mil"
+principal = "uid=deu-analyst,ou=DEU,ou=operators,dc=nato,dc=int"

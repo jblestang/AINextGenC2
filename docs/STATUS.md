@@ -195,6 +195,8 @@ cargo test -p mim-transport-http --test https_e2e
 cargo test -p mim-transport-http --test federation_e2e
 cargo test -p mim-transport-http --test webhook_e2e
 cargo test -p mim-transport-http --test saml_identity_e2e
+cargo test -p mim-policy --test live_ldap_e2e
+cargo test -p mim-transport-http --test ldap_identity_e2e
 MIM_FEDERATION_HTTP=1 cargo run --example allied_c2_sensor_retrieval
 cargo run --example coalition_exercise
 cargo run -p ainextgenc2

@@ -1,0 +1,22 @@
+attributetype ( 1.3.6.1.4.1.57476.1.1 NAME 'natoClearance'
+  DESC 'NATO ADatP structured clearance level'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15
+  SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.57476.1.2 NAME 'natoNationality'
+  DESC 'NATO operator nationality (ISO 3166 alpha-3)'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15
+  SINGLE-VALUE )
+
+attributetype ( 1.3.6.1.4.1.57476.1.3 NAME 'natoMissionId'
+  DESC 'NATO mission compartment identifier'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15
+  SINGLE-VALUE )
+
+objectclass ( 1.3.6.1.4.1.57476.2.1 NAME 'natoOperator'
+  DESC 'FMN coalition C2 operator (NATO structured clearance)'
+  SUP inetOrgPerson STRUCTURAL
+  MAY ( natoClearance $ natoNationality $ natoMissionId ) )

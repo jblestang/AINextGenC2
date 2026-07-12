@@ -1,0 +1,64 @@
+# FMN operator entries — NATO structured clearance attributes
+
+dn: uid=usa-sensor-operator,ou=USA,ou=operators,dc=nato,dc=int
+objectClass: natoOperator
+objectClass: inetOrgPerson
+cn: usa-sensor-operator
+sn: Sensor Operator
+uid: usa-sensor-operator
+natoClearance: SECRET
+natoNationality: USA
+
+dn: uid=gbr-allied-analyst,ou=GBR,ou=operators,dc=nato,dc=int
+objectClass: natoOperator
+objectClass: inetOrgPerson
+cn: gbr-allied-analyst
+sn: Allied Analyst
+uid: gbr-allied-analyst
+natoClearance: SECRET
+natoNationality: GBR
+
+dn: uid=deu-analyst,ou=DEU,ou=operators,dc=nato,dc=int
+objectClass: natoOperator
+objectClass: inetOrgPerson
+cn: deu-analyst
+sn: Analyst
+uid: deu-analyst
+natoClearance: SECRET
+natoNationality: DEU
+
+dn: uid=usa-analyst,ou=USA,ou=operators,dc=nato,dc=int
+objectClass: natoOperator
+objectClass: inetOrgPerson
+cn: usa-analyst
+sn: Analyst
+uid: usa-analyst
+natoClearance: SECRET
+natoNationality: USA
+
+dn: uid=gbr-analyst,ou=GBR,ou=operators,dc=nato,dc=int
+objectClass: natoOperator
+objectClass: inetOrgPerson
+cn: gbr-analyst
+sn: Analyst
+uid: gbr-analyst
+natoClearance: SECRET
+natoNationality: GBR
+
+dn: uid=usa-restricted-analyst,ou=USA,ou=operators,dc=nato,dc=int
+objectClass: natoOperator
+objectClass: inetOrgPerson
+cn: usa-restricted-analyst
+sn: Restricted Analyst
+uid: usa-restricted-analyst
+natoClearance: RESTRICTED
+natoNationality: USA
+
+dn: uid=gbr-restricted-analyst,ou=GBR,ou=operators,dc=nato,dc=int
+objectClass: natoOperator
+objectClass: inetOrgPerson
+cn: gbr-restricted-analyst
+sn: Restricted Analyst
+uid: gbr-restricted-analyst
+natoClearance: RESTRICTED
+natoNationality: GBR

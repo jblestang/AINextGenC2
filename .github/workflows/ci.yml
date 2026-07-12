@@ -15,9 +15,18 @@ jobs:
           toolchain: "1.88"
       - uses: Swatinem/rust-cache@v2
       - name: Install build tooling for FIPS-validated AWS-LC
-        run: sudo apt-get update && sudo apt-get install -y libxml2-utils cmake golang-go
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils cmake golang-go ldap-utils
       - name: Run workspace tests
         run: cargo test --workspace
+      - name: Start FMN OpenLDAP for live LDAP E2E
+        run: docker compose -f docker-compose.ldap-ci.yml up -d --wait --build
+      - name: Live LDAP E2E (FMN PIP + HTTPS federation)
+        env:
+          MIM_LDAP_PIP_CONFIG: config/fmn-ldap-pip-ci.toml
+          MIM_LDAP_BIND_PASSWORD: ci-ldap-admin
+        run: |
+          cargo test -p mim-policy --test live_ldap_e2e -- --ignored
+          cargo test -p mim-transport-http --test ldap_identity_e2e -- --ignored
       - name: Run labeling compliance
         run: cargo run -p ainextgenc2 -- --labeling
       - name: Run MIP4 conformance

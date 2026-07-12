@@ -1,0 +1,40 @@
+# FMN-style OpenLDAP for CI and local live-LDAP E2E tests.
+#
+#   docker compose -f docker-compose.ldap-ci.yml up -d --wait
+#   MIM_LDAP_PIP_CONFIG=config/fmn-ldap-pip-ci.toml \
+#   MIM_LDAP_BIND_PASSWORD=ci-ldap-admin \
+#     cargo test -p mim-policy --test live_ldap_e2e
+
+services:
+  fmn-openldap:
+    build:
+      context: config/ldap/ci
+      dockerfile: Dockerfile
+    ports:
+      - "389:389"
+    environment:
+      LDAP_ORGANISATION: "NATO FMN Exercise"
+      LDAP_DOMAIN: nato.int
+      LDAP_ADMIN_PASSWORD: ci-ldap-admin
+      LDAP_CONFIG_PASSWORD: config
+      LDAP_TLS: "false"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "ldapsearch",
+          "-x",
+          "-H",
+          "ldap://localhost",
+          "-b",
+          "ou=operators,dc=nato,dc=int",
+          "-D",
+          "cn=admin,dc=nato,dc=int",
+          "-w",
+          "ci-ldap-admin",
+          "(uid=gbr-allied-analyst)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
