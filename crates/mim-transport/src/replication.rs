@@ -1,5 +1,7 @@
 use crate::broker::ExchangeBroker;
 use crate::error::TransportResult;
+use crate::message::IesOperation;
+use crate::remote::FederationPublisher;
 use crate::secured::SecuredExchangeBroker;
 
 /// Result of applying replication journal entries from a publisher.
@@ -43,6 +45,37 @@ impl ReplicationAgent {
     ) -> TransportResult<ReplicationApplyReport> {
         let sync = publisher.sync_since_as(subject, since);
         Self::apply_sync_response(consumer, publisher.broker(), sync)
+    }
+
+    /// Pull journal entries from a remote HTTP publisher and apply locally.
+    pub fn pull_and_apply_remote<P: FederationPublisher>(
+        consumer: &mut ExchangeBroker,
+        publisher: &P,
+        since: u64,
+    ) -> TransportResult<ReplicationApplyReport> {
+        let sync = publisher.fetch_sync(since)?;
+        let mut applied = 0;
+        let mut skipped = 0;
+
+        for entry in sync.entries {
+            if consumer.last_applied_sequence() >= entry.sequence {
+                skipped += 1;
+                continue;
+            }
+            let instance = if entry.operation == IesOperation::PutObject {
+                Some(publisher.fetch_instance(&entry.oid)?)
+            } else {
+                None
+            };
+            consumer.apply_remote_entry(&entry, instance)?;
+            applied += 1;
+        }
+
+        Ok(ReplicationApplyReport {
+            applied,
+            skipped,
+            latest_sequence: sync.latest_sequence,
+        })
     }
 
     fn apply_sync_response(

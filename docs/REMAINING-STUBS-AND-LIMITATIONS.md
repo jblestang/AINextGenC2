@@ -176,7 +176,8 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 ### 7.1 Persistent exchange store (implemented)
 
 - **Implemented:** `FileExchangeStore` snapshots (`exchange.json`) + append-only `exchange.journal.jsonl`
-- **Limitation:** No distributed consensus or multi-node replication protocol beyond journal poll
+- **Implemented:** `HttpFederationClient` pulls PEP-filtered `/mip4-ies/v1/sync` and fetches objects over HTTPS (`replicate_into`)
+- **Limitation:** No distributed consensus; journal poll + HTTP fetch only (no push/webhook replication)
 
 ### 7.2 HTTP server — REST CRUD + wire formats
 

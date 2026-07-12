@@ -80,14 +80,10 @@ impl ExchangeBroker {
                     .store_get(&entry.oid)
                     .cloned()
                     .ok_or_else(|| TransportError::NotFound(entry.oid.to_string()))?;
-                self.put_object(PutObjectRequest { instance })?;
+                self.apply_put_entry(entry, instance)?;
             }
             IesOperation::DeleteObject => {
-                if publisher.store_contains(&entry.oid) {
-                    let _ = self.delete_object(DeleteObjectRequest {
-                        oid: entry.oid.clone(),
-                    });
-                }
+                self.apply_delete_entry(entry)?;
             }
             IesOperation::GetByOid | IesOperation::GetByFilter | IesOperation::Sync => {
                 return Err(TransportError::Unsupported(format!(
@@ -96,7 +92,50 @@ impl ExchangeBroker {
                 )));
             }
         }
+        Ok(())
+    }
 
+    /// Apply a journal entry using a remotely fetched instance (HTTP federation).
+    pub fn apply_remote_entry(
+        &mut self,
+        entry: &JournalEntry,
+        instance: Option<MimInstance>,
+    ) -> TransportResult<()> {
+        match entry.operation {
+            IesOperation::PutObject => {
+                let instance = instance.ok_or_else(|| {
+                    TransportError::Validation(format!(
+                        "missing instance payload for replicated PutObject {}",
+                        entry.oid
+                    ))
+                })?;
+                self.apply_put_entry(entry, instance)?;
+            }
+            IesOperation::DeleteObject => {
+                self.apply_delete_entry(entry)?;
+            }
+            IesOperation::GetByOid | IesOperation::GetByFilter | IesOperation::Sync => {
+                return Err(TransportError::Unsupported(format!(
+                    "journal operation {:?} is not replicable",
+                    entry.operation
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    fn apply_put_entry(&mut self, entry: &JournalEntry, instance: MimInstance) -> TransportResult<()> {
+        self.put_object(PutObjectRequest { instance })?;
+        self.applied_sequence = entry.sequence;
+        Ok(())
+    }
+
+    fn apply_delete_entry(&mut self, entry: &JournalEntry) -> TransportResult<()> {
+        if self.store_contains(&entry.oid) {
+            let _ = self.delete_object(DeleteObjectRequest {
+                oid: entry.oid.clone(),
+            });
+        }
         self.applied_sequence = entry.sequence;
         Ok(())
     }
