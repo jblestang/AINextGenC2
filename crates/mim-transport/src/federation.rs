@@ -1,6 +1,6 @@
 //! FMN coalition federation configuration.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use serde::Deserialize;
 
@@ -138,6 +138,7 @@ impl FederationConfig {
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn loads_workspace_federation_config() {

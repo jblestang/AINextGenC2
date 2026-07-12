@@ -53,6 +53,8 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | DCS audit not wired in config/scenario | `[audit]` in `config/dcs-coalition.toml`; DCS scenario exports SIEM JSON |
 | Conformance PKI always default | `mim-crypto/runtime_pki.rs` — production PEM via env; `MIM_CONFORMANCE_KEYS=1` for lab |
 | No live HTTPS E2E in CI | `mim-transport-http/tests/https_e2e.rs` + `.github/workflows/ci.yml` |
+| In-memory-only coalition federation | `HttpFederationClient` + `federation_e2e` + allied scenario `MIM_FEDERATION_HTTP=1` |
+| Caller-supplied subject only (no PIP) | Fixture LDAP PIP (`mim-policy/ldap_pip`, `SubjectResolver`, `config/fmn-ldap-pip.toml`) |
 
 ---
 
@@ -184,7 +186,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 - **Implemented:** Full CRUD, XPath filter subset, pagination, `MIM-Version` header, `application/mim+json` / `application/mim+xml`, replication sync
 - **Conformance:** 140/140 MIP4 checks pass (`ainextgenc2 --mip4`)
 - **See:** [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md)
-- **Remaining:** Official MIP4 JSON-LD wire profile, full XPath, NATO-provided accreditation vectors, live HTTPS E2E in CI
+- **Remaining:** Official MIP4 JSON-LD wire profile, full XPath, NATO-provided accreditation vectors
 
 ### 7.3 Default trust store is conformance PKI
 
@@ -251,7 +253,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | 1 | National/coalition dual-broker compartment scenario (SAR, LOC) | Coalition exercise | Medium | **Deferred** |
 | 2 | Production PKI defaults (`MIM_NMB_TRUST`, feature-flag conformance) | Coalition exercise | Low–medium | **Done** |
 | 3 | Live HTTPS E2E in CI | Coalition exercise / MIP4 pilot | Medium | **Done** |
-| 4 | LDAP/SAML PIP stub (structured NATO clearance) | Coalition exercise | Medium | Open |
+| 4 | LDAP/SAML PIP stub (structured NATO clearance) | Coalition exercise | Medium | **Partial** (fixture LDAP PIP; no live IdP) |
 | 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | Open |
 | 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | Open |
 | 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | Open |
