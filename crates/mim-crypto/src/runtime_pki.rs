@@ -108,6 +108,15 @@ mod tests {
     }
 
     #[test]
+    fn conformance_flag_enables_fixture_key_ring() {
+        let _guard = EnvGuard::with(&[(ENV_CONFORMANCE_KEYS, Some("1"))]);
+        let ring = load_key_ring().expect("ring");
+        assert_eq!(ring.nmb.signing.key_id, "nmb-conformance-key-1");
+        assert_eq!(ring.kas.signing.key_id, "kas-conformance-key-1");
+        assert_ne!(ring.nmb.signing.der(), ring.kas.signing.der());
+    }
+
+    #[test]
     fn conformance_flag_enables_fixture_trust_store() {
         let _guard = EnvGuard::with(&[(ENV_CONFORMANCE_KEYS, Some("1"))]);
         let store = load_trust_store().expect("trust");

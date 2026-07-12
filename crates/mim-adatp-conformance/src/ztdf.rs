@@ -1,4 +1,4 @@
-use mim_crypto::conformance_keypair;
+use mim_crypto::conformance_key_ring;
 use mim_labeling::{CategoryMarking, ClassificationLevel, ConfidentialityLabel, LabelPolicy};
 use mim_stanag4774::{Stanag4774Codec, Stanag4774Format};
 use mim_ztdf::ZtdfPackage;
@@ -6,8 +6,8 @@ use mim_ztdf::ZtdfPackage;
 use crate::report::{AdatpSuiteResult, AdatpTestResult};
 
 pub fn run_ztdf_suite() -> AdatpSuiteResult {
-    let keys = match conformance_keypair() {
-        Ok(k) => k,
+    let ring = match conformance_key_ring() {
+        Ok(ring) => ring,
         Err(err) => {
             return AdatpSuiteResult {
                 name: "ZTDF / OpenTDF (ACP-240)".to_owned(),
@@ -30,13 +30,13 @@ pub fn run_ztdf_suite() -> AdatpSuiteResult {
     let package = ZtdfPackage::create(
         &label,
         payload.clone(),
-        keys.signing_key(),
-        keys.verifying_key(),
-        keys.verifying_key(),
+        ring.nmb_signing(),
+        ring.nmb_verifying(),
+        ring.kas_verifying(),
     );
     let verify = package
         .as_ref()
-        .map(|p| p.verify(keys.verifying_key(), keys.signing_key()).is_ok())
+        .map(|p| p.verify(ring.nmb_verifying(), ring.kas_signing()).is_ok())
         .unwrap_or(false);
 
     let manifest = package.as_ref().ok().and_then(|p| p.manifest_json().ok());
@@ -65,7 +65,7 @@ pub fn run_ztdf_suite() -> AdatpSuiteResult {
         p.to_zip_bytes()
             .ok()
             .and_then(|zip| {
-                ZtdfPackage::from_zip_bytes(&zip, keys.verifying_key(), keys.signing_key()).ok()
+                ZtdfPackage::from_zip_bytes(&zip, ring.nmb_verifying(), ring.kas_signing()).ok()
             })
     }).is_some();
 

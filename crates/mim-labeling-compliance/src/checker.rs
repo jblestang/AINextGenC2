@@ -1,5 +1,5 @@
 use mim_audit::{AuditEventKind, AuditLog, AuditRecord};
-use mim_crypto::{conformance_keypair, selected_provider};
+use mim_crypto::{conformance_key_ring, NmbKeyRing, selected_provider};
 use mim_dcs::{CrossDomainGuard, CrossDomainTransfer, GuardDecision};
 use mim_labeling::{
     CategoryMarking, ClassificationLevel, ConfidentialityLabel, LabelPolicy,
@@ -70,8 +70,8 @@ impl LabelingComplianceChecker {
             ]))
     }
 
-    fn keys() -> mim_crypto::KeyPair {
-        conformance_keypair().expect("conformance keypair")
+    fn keys() -> mim_crypto::NmbKeyRing {
+        conformance_key_ring().expect("conformance key ring")
     }
 
     fn dimension_stanag4774(&self) -> LabelingDimensionResult {
@@ -95,7 +95,8 @@ impl LabelingComplianceChecker {
     }
 
     fn dimension_stanag4778(&self) -> LabelingDimensionResult {
-        let keys = Self::keys();
+        let ring = Self::keys();
+        let keys = &ring.nmb;
         let label = Self::sample_label();
         let payload = br#"{"instances":[]}"#;
         let profiles = [
@@ -128,17 +129,17 @@ impl LabelingComplianceChecker {
     }
 
     fn dimension_ztdf(&self) -> LabelingDimensionResult {
-        let keys = Self::keys();
+        let ring = Self::keys();
         let label = Self::sample_label();
         let payload = br#"{"modelVersion":"5.1.0"}"#.to_vec();
         let ok = ZtdfPackage::create(
             &label,
             payload,
-            keys.signing_key(),
-            keys.verifying_key(),
-            keys.verifying_key(),
+            ring.nmb_signing(),
+            ring.nmb_verifying(),
+            ring.kas_verifying(),
         )
-        .and_then(|pkg| pkg.verify(keys.verifying_key(), keys.signing_key()))
+        .and_then(|pkg| pkg.verify(ring.nmb_verifying(), ring.kas_signing()))
         .is_ok();
         let score = if ok { 1.0 } else { 0.0 };
         LabelingDimensionResult {
@@ -154,13 +155,13 @@ impl LabelingComplianceChecker {
     }
 
     fn dimension_dcs(&self) -> LabelingDimensionResult {
-        let keys = Self::keys();
+        let ring = Self::keys();
         let guard = CrossDomainGuard::preset_high_to_low();
         let label = Self::sample_label();
         let inbound = BindingDataObject::assertion_bound(
             label.clone(),
             br#"{"instances":[]}"#,
-            keys.signing_key(),
+            ring.nmb_signing(),
         )
         .expect("inbound binding");
         let transfer = CrossDomainTransfer {
@@ -169,12 +170,12 @@ impl LabelingComplianceChecker {
             label: label.clone(),
             payload: r#"{"instances":[]}"#.to_owned(),
             inbound_binding: inbound,
-            nmb_signing_key: keys.signing_key().clone(),
-            nmb_verifying_key: keys.verifying_key().clone(),
-            kas_signing_key: keys.signing_key().clone(),
-            kas_verifying_key: keys.verifying_key().clone(),
+            nmb_signing_key: ring.nmb_signing().clone(),
+            nmb_verifying_key: ring.nmb_verifying().clone(),
+            kas_signing_key: ring.kas_signing().clone(),
+            kas_verifying_key: ring.kas_verifying().clone(),
         };
-        let audit = AuditLog::memory().with_signing_key(keys.signing_key().clone());
+        let audit = AuditLog::memory().with_signing_key(ring.nmb_signing().clone());
         let allow_ok = transfer
             .execute(&guard, &audit)
             .map(|o| matches!(o, mim_dcs::TransferOutcome::Released { .. }))
@@ -365,11 +366,11 @@ impl LabelingComplianceChecker {
     }
 
     fn dimension_assertion_binding(&self) -> LabelingDimensionResult {
-        let keys = Self::keys();
+        let ring = Self::keys();
         let label = Self::sample_label();
         let payload = br#"{"test":true}"#;
-        let ok = AssertionBinding::create(&label, payload, keys.signing_key())
-            .and_then(|b| b.verify(payload, keys.verifying_key()))
+        let ok = AssertionBinding::create(&label, payload, ring.nmb_signing())
+            .and_then(|b| b.verify(payload, ring.nmb_verifying()))
             .is_ok();
         LabelingDimensionResult {
             dimension: LabelingDimension::AssertionBinding,
@@ -384,8 +385,8 @@ impl LabelingComplianceChecker {
     }
 
     fn dimension_audit_trail(&self) -> LabelingDimensionResult {
-        let keys = Self::keys();
-        let audit = AuditLog::memory().with_signing_key(keys.signing_key().clone());
+        let ring = Self::keys();
+        let audit = AuditLog::memory().with_signing_key(ring.nmb_signing().clone());
         let record = AuditRecord::new(
             AuditEventKind::CrossDomainEvaluate,
             "checker",
@@ -405,7 +406,7 @@ impl LabelingComplianceChecker {
         ));
         let file_audit = AuditLog::file(&file_path)
             .expect("file audit")
-            .with_signing_key(keys.signing_key().clone());
+            .with_signing_key(ring.nmb_signing().clone());
         let file_ok = file_audit.record(record).is_ok()
             && file_audit.len() == 1
             && AuditLog::load_from_file(&file_path)
