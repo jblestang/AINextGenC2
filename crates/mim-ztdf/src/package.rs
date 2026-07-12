@@ -1,6 +1,5 @@
 use std::io::{Cursor, Read, Write};
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use mim_crypto::{
     selected_provider, sha256_base64, AesGcmCiphertext, ContentEncryptionKey, SigningKey,
     VerifyingKey,
@@ -79,7 +78,7 @@ impl ZtdfPackage {
         domain: &SecurityDomain,
         kas: &dyn KasClient,
     ) -> LabelResult<Vec<u8>> {
-        let label = self.label_from_manifest()?;
+        let label = self.label()?;
         pep.enforce_access(
             subject.clone(),
             &label,
@@ -88,6 +87,52 @@ impl ZtdfPackage {
         )
         .map_err(|e| mim_labeling::LabelError::Validation(e.to_string()))?;
         self.decrypt_with_kas(kas)
+    }
+
+    /// Label carried in the ZTDF manifest (STANAG 4774 assertion).
+    pub fn label(&self) -> LabelResult<ConfidentialityLabel> {
+        self.label_from_manifest()
+    }
+
+    /// Verify package integrity on the release path when plaintext is already known
+    /// (no KAS decrypt — avoids bypassing PEP on the target-domain receive path).
+    pub fn verify_release(
+        &self,
+        verifying_key: &VerifyingKey,
+        plaintext: &[u8],
+    ) -> LabelResult<()> {
+        self.manifest.validate()?;
+        self.verify_binding_plaintext(plaintext, verifying_key)
+    }
+
+    /// Verify NMBS assertion binding against decrypted plaintext.
+    pub fn verify_binding_plaintext(
+        &self,
+        plaintext: &[u8],
+        verifying_key: &VerifyingKey,
+    ) -> LabelResult<()> {
+        if let Some(assertion) = &self.binding.assertion {
+            if !assertion.payload_digest.is_empty() {
+                return assertion.verify(plaintext, verifying_key);
+            }
+        }
+        let label = self.label()?;
+        let ztdf_assertion = self
+            .manifest
+            .nato_label_assertion()
+            .ok_or_else(|| mim_labeling::LabelError::Validation("missing nato-label-1".into()))?;
+        let assertion = AssertionBinding {
+            label,
+            payload_digest: sha256_base64(plaintext),
+            signature: BindingSignature {
+                algorithm: ztdf_assertion.binding.algorithm.clone(),
+                algorithm_uri: mim_crypto::NMBS_ALGORITHM_URI.to_owned(),
+                key_id: ztdf_assertion.binding.key_id.clone(),
+                signature: ztdf_assertion.binding.signature.clone(),
+            },
+            signed_label_xml: Some(ztdf_assertion.signed_label_xml.clone()),
+        };
+        assertion.verify(plaintext, verifying_key)
     }
 
     /// Unwrap CEK via KAS and decrypt payload (no PEP gate).
@@ -117,12 +162,23 @@ impl ZtdfPackage {
 
     pub fn verify(&self, verifying_key: &VerifyingKey, kas_private_key: &SigningKey) -> LabelResult<()> {
         self.manifest.validate()?;
-        let plaintext = self.decrypt(kas_private_key)?;
-        self.binding.verify(&plaintext, Some(verifying_key))?;
-        if let Some(assertion) = &self.binding.assertion {
-            assertion.verify(&plaintext, verifying_key)?;
-        }
-        Ok(())
+        let client = crate::kas::LocalKasClient::new(kas_private_key.clone());
+        let plaintext = self.decrypt_with_kas(&client)?;
+        self.verify_binding_plaintext(&plaintext, verifying_key)
+    }
+
+    /// Load a sealed ZTDF ZIP without KAS decrypt (for target-side PEP-gated receive).
+    pub fn from_zip_sealed(data: &[u8]) -> LabelResult<Self> {
+        let (manifest, encrypted_payload) = read_zip_entries(data)?;
+        manifest.validate()?;
+        let label = manifest_label(&manifest)?;
+        let binding = binding_from_manifest(&manifest, &label)?;
+        Ok(Self {
+            manifest,
+            encrypted_payload,
+            content_key: ContentEncryptionKey::from_bytes([0u8; 32]),
+            binding,
+        })
     }
 
     pub fn to_zip_bytes(&self) -> LabelResult<Vec<u8>> {
@@ -151,97 +207,80 @@ impl ZtdfPackage {
         verifying_key: &VerifyingKey,
         kas_private_key: &SigningKey,
     ) -> LabelResult<Self> {
-        let cursor = Cursor::new(data);
-        let mut archive =
-            ZipArchive::new(cursor).map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?;
-        let mut manifest_data = String::new();
-        archive
-            .by_name(MANIFEST_ENTRY)
-            .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?
-            .read_to_string(&mut manifest_data)
-            .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?;
-        let manifest = ZtdfManifest::from_json(&manifest_data)?;
-        let mut encrypted_payload = Vec::new();
-        archive
-            .by_name(PAYLOAD_ENTRY)
-            .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?
-            .read_to_end(&mut encrypted_payload)
-            .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?;
-
-        let wrapped = STANDARD
-            .decode(&manifest.encryption_information.key_wrap.wrapped_key)
-            .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?;
-        let provider = selected_provider();
-        let content_key = provider
-            .unwrap_key_rsa_oaep_sha256(kas_private_key, &wrapped)
-            .map_err(|e| mim_labeling::LabelError::Binding(e.to_string()))?;
-
-        let ciphertext = AesGcmCiphertext::from_bytes(&encrypted_payload)
-            .map_err(|e| mim_labeling::LabelError::Binding(e.to_string()))?;
-        let plaintext = provider
-            .decrypt_aes256_gcm(&content_key, &ciphertext, b"ztdf/0.payload")
-            .map_err(|e| mim_labeling::LabelError::Binding(e.to_string()))?;
-
-        let label = manifest
-            .nato_label_assertion()
-            .and_then(|a| {
-                serde_json::to_string(&a.statement.value)
-                    .ok()
-                    .and_then(|json| {
-                        mim_stanag4774::Stanag4774Codec::new()
-                            .deserialize(&json, mim_stanag4774::Stanag4774Format::JsonStructured)
-                            .ok()
-                    })
-            })
-            .ok_or_else(|| mim_labeling::LabelError::Validation("missing label assertion".into()))?;
-
-        let ztdf_assertion = manifest
-            .nato_label_assertion()
-            .ok_or_else(|| mim_labeling::LabelError::Validation("missing nato-label-1".into()))?;
-
-        let payload_digest = sha256_base64(&plaintext);
-        if ztdf_assertion.binding.key_id != verifying_key.key_id {
-            return Err(mim_labeling::LabelError::Binding(format!(
-                "NMBS key id mismatch: expected {}, got {}",
-                verifying_key.key_id, ztdf_assertion.binding.key_id
-            )));
-        }
-        let assertion = AssertionBinding {
-            label: label.clone(),
-            payload_digest,
-            signature: BindingSignature {
-                algorithm: ztdf_assertion.binding.algorithm.clone(),
-                algorithm_uri: mim_crypto::NMBS_ALGORITHM_URI.to_owned(),
-                key_id: ztdf_assertion.binding.key_id.clone(),
-                signature: ztdf_assertion.binding.signature.clone(),
-            },
-            signed_label_xml: Some(ztdf_assertion.signed_label_xml.clone()),
-        };
-        assertion.verify(&plaintext, verifying_key)?;
-
-        let codec = mim_stanag4774::Stanag4774Codec::new();
-        let label_encoding = codec.serialize(&label, mim_stanag4774::Stanag4774Format::Xml)?;
-        let binding = BindingDataObject {
-            binding: MetadataBinding::assertion_ztdf(),
-            label: label.clone(),
-            label_encoding,
-            payload_digest: assertion.payload_digest.clone(),
-            assertion: Some(assertion),
-        };
-
-        let package = Self {
-            manifest,
-            encrypted_payload,
-            content_key,
-            binding,
-        };
-        package.verify(verifying_key, kas_private_key)?;
+        let package = Self::from_zip_sealed(data)?;
+        let kas = crate::kas::LocalKasClient::new(kas_private_key.clone());
+        let plaintext = package.decrypt_with_kas(&kas)?;
+        package.verify_binding_plaintext(&plaintext, verifying_key)?;
         Ok(package)
     }
 
     pub fn manifest_json(&self) -> LabelResult<String> {
         self.manifest.to_json()
     }
+}
+
+fn read_zip_entries(data: &[u8]) -> LabelResult<(ZtdfManifest, Vec<u8>)> {
+    let cursor = Cursor::new(data);
+    let mut archive =
+        ZipArchive::new(cursor).map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?;
+    let mut manifest_data = String::new();
+    archive
+        .by_name(MANIFEST_ENTRY)
+        .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?
+        .read_to_string(&mut manifest_data)
+        .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?;
+    let manifest = ZtdfManifest::from_json(&manifest_data)?;
+    let mut encrypted_payload = Vec::new();
+    archive
+        .by_name(PAYLOAD_ENTRY)
+        .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?
+        .read_to_end(&mut encrypted_payload)
+        .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?;
+    Ok((manifest, encrypted_payload))
+}
+
+fn manifest_label(manifest: &ZtdfManifest) -> LabelResult<ConfidentialityLabel> {
+    manifest
+        .nato_label_assertion()
+        .and_then(|a| {
+            serde_json::to_string(&a.statement.value)
+                .ok()
+                .and_then(|json| {
+                    mim_stanag4774::Stanag4774Codec::new()
+                        .deserialize(&json, mim_stanag4774::Stanag4774Format::JsonStructured)
+                        .ok()
+                })
+        })
+        .ok_or_else(|| mim_labeling::LabelError::Validation("missing label assertion".into()))
+}
+
+fn binding_from_manifest(
+    manifest: &ZtdfManifest,
+    label: &ConfidentialityLabel,
+) -> LabelResult<BindingDataObject> {
+    let ztdf_assertion = manifest
+        .nato_label_assertion()
+        .ok_or_else(|| mim_labeling::LabelError::Validation("missing nato-label-1".into()))?;
+    let assertion = AssertionBinding {
+        label: label.clone(),
+        payload_digest: String::new(),
+        signature: BindingSignature {
+            algorithm: ztdf_assertion.binding.algorithm.clone(),
+            algorithm_uri: mim_crypto::NMBS_ALGORITHM_URI.to_owned(),
+            key_id: ztdf_assertion.binding.key_id.clone(),
+            signature: ztdf_assertion.binding.signature.clone(),
+        },
+        signed_label_xml: Some(ztdf_assertion.signed_label_xml.clone()),
+    };
+    let codec = mim_stanag4774::Stanag4774Codec::new();
+    let label_encoding = codec.serialize(label, mim_stanag4774::Stanag4774Format::Xml)?;
+    Ok(BindingDataObject {
+        binding: MetadataBinding::assertion_ztdf(),
+        label: label.clone(),
+        label_encoding,
+        payload_digest: String::new(),
+        assertion: Some(assertion),
+    })
 }
 
 #[cfg(test)]
@@ -335,5 +374,46 @@ mod tests {
             .decrypt_with_policy(&cleared, &pep, &domain, &kas)
             .expect("decrypt");
         assert_eq!(plaintext, b"classified-payload");
+    }
+
+    #[test]
+    fn sealed_zip_decrypts_through_pep() {
+        use mim_labeling::DomainId;
+        use mim_policy::{
+            PolicyDecisionPoint, PolicyEnforcementPoint, PolicyInformationPoint, PolicyStore,
+            SubjectAttributes,
+        };
+
+        let ring = conformance_key_ring().expect("key ring");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let payload = b"classified-payload".to_vec();
+        let package = ZtdfPackage::create(
+            &label,
+            payload.clone(),
+            ring.nmb_signing(),
+            ring.nmb_verifying(),
+            ring.kas_verifying(),
+        )
+        .expect("create");
+        let zip = package.to_zip_bytes().expect("zip");
+        let sealed = ZtdfPackage::from_zip_sealed(&zip).expect("sealed");
+        let store = PolicyStore::preset_coalition();
+        let pep = PolicyEnforcementPoint::new(
+            PolicyInformationPoint::new(),
+            PolicyDecisionPoint::new(store.clone()),
+        );
+        let domain = store
+            .domain(&DomainId::new("DOMAIN-NATO"))
+            .expect("domain")
+            .clone();
+        let kas = crate::kas::LocalKasClient::new(ring.kas_signing().clone());
+        let subject = SubjectAttributes::new("high-analyst", ClassificationLevel::Secret);
+        let plaintext = sealed
+            .decrypt_with_policy(&subject, &pep, &domain, &kas)
+            .expect("decrypt");
+        assert_eq!(plaintext, payload);
+        sealed
+            .verify_binding_plaintext(&plaintext, ring.nmb_verifying())
+            .expect("binding");
     }
 }

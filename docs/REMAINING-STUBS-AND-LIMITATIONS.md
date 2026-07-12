@@ -47,7 +47,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 |-----------|------------|--------|
 | **STANAG 4774** | National extensions and compound category rules not fully modeled; classification values not XSD-enforced | Cannot represent all national label profiles |
 | **STANAG 4778** | Non-assertion bindings lack NMBS by default; SMTP binding library-only; HTTPS server exposes PUT only | Cross-domain still requires assertion binding (by design) |
-| **ZTDF / ACP-240** | Static demo access policy; no KAS protocol; no ABAC at decrypt; OpenTDF manifest subset | CEK unwrap is in-process; holder can decrypt without attribute check |
+| **ZTDF / ACP-240** | DCS target receive uses PEP ABAC gate (`receive_ztdf_on_target`); local KAS stub | Remote KAS protocol; full OpenTDF schema |
 | **SPIF** | Parser subset; no signed SPIF distribution (NMRR workflow) | Policy admin is file-based, not centrally signed |
 | **Policy plane** | PIP is caller-supplied (no LDAP/SAML); no full CMBAC matrix; no XACML obligations | Clearance comes from application, not enterprise IdP |
 | **DCS** | Accredited guard profile (pilot); conformance keys in lab demos; no dual-broker national/coalition separation | Exercise-ready; formal accreditation open |
@@ -88,7 +88,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | In-memory-only coalition federation | `HttpFederationClient` + `federation_e2e` + allied scenario `MIM_FEDERATION_HTTP=1` |
 | Caller-supplied subject only (no PIP) | Fixture LDAP PIP + live LDAP + SAML bearer (`SubjectDirectory`, `saml_pip`) |
 | No JSON-LD wire profile in CI | `serialize` JSON-LD tests + `get_by_oid_returns_jsonld` + `https_get_returns_jsonld` |
-| KAS unwrap without ABAC gate | `ZtdfPackage::decrypt_with_policy` + `KasClient` trait |
+| KAS unwrap without ABAC gate on DCS path | `ZtdfPackage::decrypt_with_policy`; `CrossDomainTransfer::receive_ztdf_on_target` |
 | NMBS and KAS keys collapsed in demos | Separate `conformance_key_ring()` / `conformance_kas_keypair()` hierarchies |
 
 ---
@@ -291,7 +291,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | 3 | Live HTTPS E2E in CI | Coalition exercise / MIP4 pilot | Medium | **Done** |
 | 4 | LDAP/SAML PIP (structured NATO clearance) | Coalition exercise | Medium | **Partial** (fixture + live LDAP + SAML bearer) |
 | 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | **Partial** (wire + CI E2E; NATO vectors open) |
-| 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | **Partial** (local + HTTP KAS stub; ABAC gate) |
+| 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | **Partial** (local + HTTP KAS stub; PEP gate on DCS receive) |
 | 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | **Partial** (`WormAuditSink`, accredited guard profile; hardware WORM + TLS/auth open) |
 | 8 | Signed SPIF distribution (NMRR-equivalent workflow) | Classified accredited | High | Open |
 | 9 | Authoritative MIM 5.1 OWL (when mimworld republishes) | Manifest accuracy | External | Open |

@@ -81,7 +81,7 @@ Import pipeline:
 | Subsystem | Lab / conformance | Operational pilot | Gap |
 |-----------|-------------------|-------------------|-----|
 | STANAG 4774/4778 | Ready | Partial | Full national extensions in production IdP |
-| ZTDF (ACP-240 Supp. 3–4) | Ready (encoding + ABAC decrypt gate) | Partial | Remote KAS protocol; full OpenTDF schema |
+| ZTDF (ACP-240 Supp. 3–4) | Ready (encoding + ABAC decrypt gate) | Partial | DCS target receive uses PEP gate; remote KAS protocol open |
 | DCS cross-domain guard | Ready (config + audit) | Partial | Accredited guard profile (pilot); formal accreditation open |
 | MIP4-IES transport | Ready (100% dimensional + HTTPS/JSON-LD E2E) | Ready | NATO accreditation vectors; full XPath |
 | Policy plane (PIP/PDP/PEP) | Ready (caveats + mission + LDAP/SAML PIP) | Ready | No full CMBAC; production IdP wiring |
@@ -124,7 +124,7 @@ The DCS cross-domain scenario signs audit records, persists envelopes when confi
 | Scenario | Example | Demonstrates |
 |----------|---------|--------------|
 | `air_defense_radar` | `cargo run --example air_defense_radar` | Sensor → MIM tracks/targets |
-| `dcs_cross_domain` | `cargo run --example dcs_cross_domain` | STANAG label + NMBS + ZTDF + guard downgrade + durable audit |
+| `dcs_cross_domain` | `cargo run --example dcs_cross_domain` | STANAG label + NMBS + ZTDF + guard downgrade + PEP-gated ZTDF receive + durable audit |
 | `mip4_ies_exchange` | `cargo run --example mip4_ies_exchange` | PEP-gated PutObject / GetByFilter |
 | `allied_sensor_retrieval` | `cargo run --example allied_c2_sensor_retrieval` | USA→GBR coalition sync; set `MIM_FEDERATION_HTTP=1` for HTTPS federation |
 | `coalition_exercise` | `cargo run --example coalition_exercise` | FMN notify+pull federation (default lab); `--production` for deployment PKI |

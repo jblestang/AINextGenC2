@@ -10,6 +10,7 @@ use mim_labeling::{
     CategoryMarking, ClassificationLevel, ConfidentialityLabel, LabelPolicy,
 };
 use mim_labeling_compliance::LabelingComplianceChecker;
+use mim_policy::SubjectAttributes;
 use mim_runtime::Serializer;
 use mim_stanag4778::BindingDataObject;
 use serde::{Deserialize, Serialize};
@@ -33,6 +34,7 @@ pub struct DcsScenarioOutput {
     pub siem_export_path: Option<String>,
     pub accredited_profile: bool,
     pub worm_audit_verified: bool,
+    pub ztdf_pep_decrypt_verified: bool,
 }
 
 /// DCS cross-domain scenario wrapping the air defense radar exchange.
@@ -151,13 +153,36 @@ impl DcsCrossDomainScenario {
         let guard_result = transfer.guard_result(&guard)?;
         let outcome = transfer.execute(&guard, &audit)?;
 
-        let (label_xml, ztdf_manifest) = match &outcome {
+        let (label_xml, ztdf_manifest, ztdf_pep_decrypt_verified) = match &outcome {
+            TransferOutcome::Released {
+                label_xml,
+                ztdf_manifest,
+                ztdf_package_zip: Some(zip),
+                ..
+            } => {
+                let cleared_subject = SubjectAttributes::new(
+                    "low-side-analyst",
+                    ClassificationLevel::Restricted,
+                )
+                .with_nationality("USA");
+                let decrypted = CrossDomainTransfer::receive_ztdf_on_target_with_key(
+                    &cleared_subject,
+                    &guard,
+                    zip,
+                    ring.nmb_verifying(),
+                    ring.kas_signing(),
+                    &audit,
+                )
+                .map_err(|e| mim_core::MimError::Validation(e.to_string()))?;
+                let pep_ok = decrypted == labeled.mim_json;
+                (Some(label_xml.clone()), ztdf_manifest.clone(), pep_ok)
+            }
             TransferOutcome::Released {
                 label_xml,
                 ztdf_manifest,
                 ..
-            } => (Some(label_xml.clone()), ztdf_manifest.clone()),
-            TransferOutcome::Denied { .. } => (None, None),
+            } => (Some(label_xml.clone()), ztdf_manifest.clone(), false),
+            TransferOutcome::Denied { .. } => (None, None, false),
         };
 
         let labeling_report = LabelingComplianceChecker::with_defaults().evaluate();
@@ -207,6 +232,7 @@ impl DcsCrossDomainScenario {
             siem_export_path,
             accredited_profile,
             worm_audit_verified,
+            ztdf_pep_decrypt_verified,
         })
     }
 }
@@ -228,6 +254,7 @@ mod tests {
         assert!(output.audit_record_count >= 2);
         assert!(output.audit_chain_verified);
         assert!(!output.accredited_profile);
+        assert!(output.ztdf_pep_decrypt_verified);
     }
 
     #[test]
