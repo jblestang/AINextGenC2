@@ -77,16 +77,44 @@ impl KeyPair {
 
 /// Conformance / test NMBS key pair (2048-bit RSA, deterministic fixture).
 pub fn conformance_keypair() -> CryptoResult<KeyPair> {
-    KeyPair::from_pkcs8_der("nmb-conformance-key-1", CONFORMANCE_PRIVATE_KEY_DER)
+    KeyPair::from_pkcs8_der("nmb-conformance-key-1", CONFORMANCE_NMB_PRIVATE_KEY_DER)
 }
 
-const CONFORMANCE_PRIVATE_KEY_DER: &[u8] = include_bytes!("../fixtures/nmb-conformance-rsa.pk8");
+/// Conformance / test KAS key pair (2048-bit RSA, separate hierarchy from NMBS).
+pub fn conformance_kas_keypair() -> CryptoResult<KeyPair> {
+    KeyPair::from_pkcs8_der("kas-conformance-key-1", CONFORMANCE_KAS_PRIVATE_KEY_DER)
+}
+
+/// Conformance NMBS + KAS key ring with distinct hierarchies (lab / CI).
+pub fn conformance_key_ring() -> CryptoResult<crate::pki::NmbKeyRing> {
+    Ok(crate::pki::NmbKeyRing {
+        nmb: conformance_keypair()?,
+        kas: conformance_kas_keypair()?,
+    })
+}
+
+const CONFORMANCE_NMB_PRIVATE_KEY_DER: &[u8] = include_bytes!("../fixtures/nmb-conformance-rsa.pk8");
+const CONFORMANCE_KAS_PRIVATE_KEY_DER: &[u8] = include_bytes!("../fixtures/kas-conformance-rsa.pk8");
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
     use crate::provider::{sign_nmb_binding, verify_nmb_binding};
+
+    #[test]
+    fn conformance_kas_keypair_loads() {
+        let kp = conformance_kas_keypair().expect("keypair");
+        assert_eq!(kp.signing.key_id, "kas-conformance-key-1");
+    }
+
+    #[test]
+    fn conformance_key_ring_uses_distinct_hierarchies() {
+        let ring = conformance_key_ring().expect("ring");
+        assert_eq!(ring.nmb.signing.key_id, "nmb-conformance-key-1");
+        assert_eq!(ring.kas.signing.key_id, "kas-conformance-key-1");
+        assert_ne!(ring.nmb.signing.der(), ring.kas.signing.der());
+    }
 
     #[test]
     fn conformance_keypair_loads() {

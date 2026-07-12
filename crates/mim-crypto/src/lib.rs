@@ -33,7 +33,10 @@ mod fips_backend;
 
 pub use error::{CryptoError, CryptoResult};
 pub use hash::{sha256, sha256_base64, sha256_hex};
-pub use keys::{conformance_keypair, KeyPair, PublicKey, SigningKey, VerifyingKey};
+pub use keys::{
+    conformance_key_ring, conformance_keypair, conformance_kas_keypair, KeyPair, PublicKey,
+    SigningKey, VerifyingKey,
+};
 pub use pki::{NmbKeyRing, NmbTrustStore};
 pub use runtime_pki::{
     conformance_keys_enabled, load_key_ring, load_trust_store, ENV_CONFORMANCE_KEYS,

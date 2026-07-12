@@ -84,7 +84,7 @@ let ring = NmbKeyRing::from_pkcs8_files(
 let trust = NmbTrustStore::from_spki_pem_files(["/etc/mim/nmb-trust.pem"])?;
 ```
 
-Lab/conformance mode uses `NmbKeyRing::conformance()` and the fixture at `crates/mim-crypto/fixtures/nmb-conformance-rsa.pk8`.
+Lab/conformance mode uses `NmbKeyRing::conformance()` with separate fixtures: `nmb-conformance-rsa.pk8` (NMBS, `nmb-conformance-key-1`) and `kas-conformance-rsa.pk8` (KAS, `kas-conformance-key-1`).
 
 ## SPIF (`mim-spif`)
 

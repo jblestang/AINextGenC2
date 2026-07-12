@@ -211,35 +211,53 @@ impl ZtdfPackage {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
-    use mim_crypto::conformance_keypair;
+    use mim_crypto::conformance_key_ring;
     use mim_labeling::{CategoryMarking, ClassificationLevel, LabelPolicy};
 
     use super::*;
 
     #[test]
     fn package_create_verify_and_zip_roundtrip() {
-        let kp = conformance_keypair().expect("keypair");
+        let ring = conformance_key_ring().expect("key ring");
         let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret)
             .with_category(CategoryMarking::releasable_to(vec!["USA".into()]));
         let payload = br#"{"modelVersion":"5.1.0"}"#.to_vec();
         let package = ZtdfPackage::create(
             &label,
             payload.clone(),
-            kp.signing_key(),
-            kp.verifying_key(),
-            kp.verifying_key(),
+            ring.nmb_signing(),
+            ring.nmb_verifying(),
+            ring.kas_verifying(),
         )
         .expect("create");
         package
-            .verify(kp.verifying_key(), kp.signing_key())
+            .verify(ring.nmb_verifying(), ring.kas_signing())
             .expect("verify");
-        let decrypted = package.decrypt(kp.signing_key()).expect("decrypt");
+        let decrypted = package.decrypt(ring.kas_signing()).expect("decrypt");
         assert_eq!(decrypted, payload);
         let zip = package.to_zip_bytes().expect("zip");
-        let restored = ZtdfPackage::from_zip_bytes(&zip, kp.verifying_key(), kp.signing_key())
-            .expect("from zip");
+        let restored =
+            ZtdfPackage::from_zip_bytes(&zip, ring.nmb_verifying(), ring.kas_signing())
+                .expect("from zip");
         restored
-            .verify(kp.verifying_key(), kp.signing_key())
+            .verify(ring.nmb_verifying(), ring.kas_signing())
             .expect("restored verify");
+    }
+
+    #[test]
+    fn kas_wrapped_cek_requires_kas_private_key() {
+        let ring = conformance_key_ring().expect("key ring");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let payload = b"classified-payload".to_vec();
+        let package = ZtdfPackage::create(
+            &label,
+            payload,
+            ring.nmb_signing(),
+            ring.nmb_verifying(),
+            ring.kas_verifying(),
+        )
+        .expect("create");
+        assert!(package.decrypt(ring.nmb_signing()).is_err());
+        assert!(package.decrypt(ring.kas_signing()).is_ok());
     }
 }

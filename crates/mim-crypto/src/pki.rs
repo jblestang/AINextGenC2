@@ -48,13 +48,9 @@ impl NmbKeyRing {
         })
     }
 
-    /// Conformance / lab key ring (deterministic RSA fixture).
+    /// Conformance / lab key ring (deterministic RSA fixtures, separate NMBS and KAS).
     pub fn conformance() -> CryptoResult<Self> {
-        let kp = crate::keys::conformance_keypair()?;
-        Ok(Self {
-            nmb: kp.clone(),
-            kas: kp,
-        })
+        crate::keys::conformance_key_ring()
     }
 
     pub fn nmb_signing(&self) -> &SigningKey {
@@ -207,6 +203,8 @@ mod tests {
     fn conformance_key_ring_loads() {
         let ring = NmbKeyRing::conformance().expect("ring");
         assert_eq!(ring.nmb.signing.key_id, "nmb-conformance-key-1");
+        assert_eq!(ring.kas.signing.key_id, "kas-conformance-key-1");
+        assert_ne!(ring.nmb.signing.der(), ring.kas.signing.der());
     }
 
     #[test]

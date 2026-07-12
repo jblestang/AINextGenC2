@@ -83,9 +83,10 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 - **See:** `config/pki.env.example`
 - **Limitation:** Deterministic conformance key remains unsuitable for operational deployment; production paths must be supplied explicitly.
 
-### 1.5 NMBS and KAS keys collapsed in demos
+### 1.5 NMBS and KAS key hierarchies
 
-- **Limitation:** Same key used as NMB signer and KAS public key in exercise paths.
+- **Implemented:** `NmbKeyRing` loads separate PKCS#8 paths (`MIM_NMB_SIGNING_KEY`, `MIM_KAS_SIGNING_KEY`); conformance fixtures use distinct `nmb-conformance-key-1` and `kas-conformance-key-1` hierarchies via `conformance_key_ring()`.
+- **Limitation:** No live KAS protocol or distributed KAS public-key directory beyond env-loaded PEM paths.
 
 ### 1.6 No HSM or PKCS#11 integration
 
