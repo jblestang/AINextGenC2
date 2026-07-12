@@ -12,8 +12,8 @@ use mim_policy::{
     AccessOperation, PolicyEffect, PolicyInformationPoint, SubjectAttributes, SubjectResolver,
 };
 use mim_transport::{
-    ExchangeBroker, GetByFilterRequest, ReplicationAgent, SecuredExchangeBroker, TransportError,
-    TransportResult,
+    ExchangeBroker, FederationConfig, GetByFilterRequest, ReplicationAgent, SecuredExchangeBroker,
+    TransportError, TransportResult,
 };
 use serde::{Deserialize, Serialize};
 
@@ -134,35 +134,40 @@ impl AlliedSensorRetrievalScenario {
 
     /// Remote HTTPS federation against an ephemeral USA publisher node.
     pub async fn run_over_http(&self, stack: &MimStack) -> TransportResult<AlliedSensorRetrievalOutput> {
-        use mim_crypto::NmbTrustStore;
-        use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer, HttpFederationClient};
-
         std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
+        self.run_coalition_exercise(stack, None).await
+    }
+
+    /// Coalition exercise path: production PKI from env + optional [`FederationConfig`].
+    pub async fn run_coalition_exercise(
+        &self,
+        stack: &MimStack,
+        federation: Option<&FederationConfig>,
+    ) -> TransportResult<AlliedSensorRetrievalOutput> {
+        use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer, HttpFederationClient};
 
         let prepared = self.prepare_publisher(stack)?;
         let tls = lab_tls_identity().map_err(|e| TransportError::Validation(e))?;
-        let config = HttpExchangeConfig {
-            trust_store: NmbTrustStore::from_verifying_keys([mim_crypto::conformance_keypair()
-                .map_err(|e| TransportError::Validation(e.to_string()))?
-                .verifying_key()
-                .clone()]),
-            subject_resolver: SubjectResolver::conformance()
-                .map_err(|e| TransportError::Validation(e.to_string()))?,
-            require_client_identity: true,
-            fallback_subject: None,
-        };
+        let config = HttpExchangeConfig::from_env()
+            .map_err(|e| TransportError::Validation(e.to_string()))?;
 
-        let server = HttpExchangeServer::new(
+        let mut server = HttpExchangeServer::new(
             std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
             tls,
         )
         .with_config(config);
 
+        if let Some(fed) = federation {
+            server = server
+                .with_federation(fed)
+                .map_err(|e| TransportError::Validation(e))?;
+        }
+
         let registry = prepared.registry.clone();
         let sensor_name = prepared.sensor_name.clone();
         let usa_published_count = prepared.usa_published_count;
         let gbr_subject = prepared.gbr_subject.clone();
-        let mut policy_decisions = prepared.policy_decisions;
+        let policy_decisions = prepared.policy_decisions;
 
         let (addr, server_task) = server
             .serve_ephemeral(prepared.usa_c2)
@@ -170,8 +175,7 @@ impl AlliedSensorRetrievalScenario {
             .map_err(|e| TransportError::Validation(e))?;
 
         let sync_url = format!("https://{addr}/mip4-ies/v1/sync");
-        let client = HttpFederationClient::new(&sync_url)
-            .map_err(|e| TransportError::Validation(e.to_string()))?
+        let client = HttpFederationClient::new(&sync_url)?
             .with_client_cn("gbr-analyst.nato.mil")
             .map_err(|e| TransportError::Validation(e.to_string()))?;
 

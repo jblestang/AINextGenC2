@@ -80,6 +80,9 @@ pub struct HttpExchangeServer {
     tls: TlsIdentity,
     client_ca: Option<Vec<CertificateDer<'static>>>,
     config: HttpExchangeConfig,
+    webhook_targets: Vec<String>,
+    federation_pull_url: Option<String>,
+    federation_client_cn: Option<String>,
 }
 
 impl HttpExchangeServer {
@@ -89,7 +92,41 @@ impl HttpExchangeServer {
             tls,
             client_ca: None,
             config: HttpExchangeConfig::default(),
+            webhook_targets: Vec::new(),
+            federation_pull_url: None,
+            federation_client_cn: None,
         }
+    }
+
+    /// Configure coalition federation webhooks and consumer pull URL from [`FederationConfig`].
+    pub fn with_federation(mut self, federation: &FederationConfig) -> Result<Self, String> {
+        if !mim_crypto::conformance_keys_enabled() {
+            federation.apply_pki_env().map_err(|e| e.to_string())?;
+            if let Some(ca_path) = federation.client_ca_path() {
+                let pem = std::fs::read(ca_path)
+                    .map_err(|e| format!("read client CA {}: {e}", ca_path))?;
+                self = self.with_client_ca(&pem)?;
+            }
+        }
+        if let Some(url) = federation.peer_notify_url("gbr") {
+            self.webhook_targets = vec![url.to_owned()];
+        }
+        Ok(self)
+    }
+
+    pub fn with_federation_pull(
+        mut self,
+        publisher_sync_url: impl Into<String>,
+        client_cn: impl Into<String>,
+    ) -> Self {
+        self.federation_pull_url = Some(publisher_sync_url.into());
+        self.federation_client_cn = Some(client_cn.into());
+        self
+    }
+
+    pub fn with_webhook_targets(mut self, targets: Vec<String>) -> Self {
+        self.webhook_targets = targets;
+        self
     }
 
     pub fn with_config(mut self, config: HttpExchangeConfig) -> Self {
@@ -145,6 +182,9 @@ impl HttpExchangeServer {
             subject_resolver: Arc::new(self.config.subject_resolver.clone()),
             require_client_identity: self.config.require_client_identity,
             fallback_subject: self.config.fallback_subject.clone(),
+            webhook_targets: Arc::new(self.webhook_targets.clone()),
+            federation_pull_url: self.federation_pull_url.clone(),
+            federation_client_cn: self.federation_client_cn.clone(),
         };
         Ok((acceptor, routes::exchange_router(state)))
     }
@@ -322,6 +362,9 @@ mod tests {
                 "analyst",
                 ClassificationLevel::Secret,
             )),
+            webhook_targets: Arc::new(Vec::new()),
+            federation_pull_url: None,
+            federation_client_cn: None,
         };
         routes::handle_put(&state, &headers, None, envelope)
             .await

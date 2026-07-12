@@ -7,7 +7,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::header::{ACCEPT, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{get, put};
+use axum::routing::{get, post, put};
 use axum::{Json, Router};
 use mim_crypto::NmbTrustStore;
 use mim_policy::{SubjectAttributes, SubjectResolver};
@@ -23,7 +23,8 @@ use mim_transport::wire::{
     MIM_VERSION,
 };
 use mim_transport::{
-    encode_oid_for_path, filter_from_query, TransportError, TransportResult,
+    encode_oid_for_path, filter_from_query, notify_webhooks, ReplicationNotifyPayload,
+    TransportError, TransportResult,
 };
 use serde::Deserialize;
 use tokio::sync::Mutex;
@@ -38,6 +39,11 @@ pub struct AppState {
     pub subject_resolver: Arc<SubjectResolver>,
     pub require_client_identity: bool,
     pub fallback_subject: Option<SubjectAttributes>,
+    /// Publisher-side webhook targets notified after journal append.
+    pub webhook_targets: Arc<Vec<String>>,
+    /// Consumer-side publisher sync URL used by the replication notify handler.
+    pub federation_pull_url: Option<String>,
+    pub federation_client_cn: Option<String>,
 }
 
 /// Build the MIP4-IES REST router (`/mip4-ies/v1/objects` CRUD + replication sync).
@@ -49,6 +55,7 @@ pub fn exchange_router(state: AppState) -> Router {
         )
         .route("/mip4-ies/v1/objects", put(put_object).get(get_by_filter))
         .route("/mip4-ies/v1/sync", get(sync_changes))
+        .route("/mip4-ies/v1/replication/notify", post(replication_notify))
         .route("/health", get(|| async { "ok" }))
         .with_state(state)
 }
@@ -89,12 +96,19 @@ async fn put_object(
         Err(err) => return map_error(TransportError::Serialization(err.to_string())),
     };
     match handle_put(&state, &headers, tls_identity.as_ref(), envelope).await {
-        Ok(response) => negotiated_response(
-            &headers,
-            WirePayloadFormat::Json,
-            StatusCode::CREATED,
-            &response,
-        ),
+        Ok(response) => {
+            let latest = {
+                let broker = state.broker.lock().await;
+                broker.latest_sequence()
+            };
+            notify_webhooks(state.webhook_targets.as_ref(), latest);
+            negotiated_response(
+                &headers,
+                WirePayloadFormat::Json,
+                StatusCode::CREATED,
+                &response,
+            )
+        }
         Err(err) => map_error(err),
     }
 }
@@ -221,6 +235,41 @@ async fn sync_changes(
     let broker = state.broker.lock().await;
     let response = broker.sync_since_as(subject, since);
     negotiated_response(&headers, WirePayloadFormat::Json, StatusCode::OK, &response)
+}
+
+async fn replication_notify(
+    State(state): State<AppState>,
+    Json(_payload): Json<ReplicationNotifyPayload>,
+) -> Response {
+    let Some(pull_url) = state.federation_pull_url.clone() else {
+        return map_error(TransportError::InvalidRequest(
+            "node is not configured as federation consumer (no pull URL)".into(),
+        ));
+    };
+    let client_cn = state
+        .federation_client_cn
+        .clone()
+        .unwrap_or_else(|| "gbr-analyst.nato.mil".into());
+    let client = match crate::federation_client::HttpFederationClient::new(&pull_url)
+        .and_then(|c| c.with_client_cn(client_cn))
+    {
+        Ok(client) => client,
+        Err(err) => return map_error(err),
+    };
+    let mut broker = state.broker.lock().await;
+    let since = broker.broker().last_applied_sequence();
+    match client
+        .replicate_into(broker.broker_mut(), since)
+        .await
+    {
+        Ok(report) => negotiated_response(
+            &HeaderMap::new(),
+            WirePayloadFormat::Json,
+            StatusCode::OK,
+            &report,
+        ),
+        Err(err) => map_error(err),
+    }
 }
 
 pub async fn handle_put(
@@ -536,6 +585,9 @@ mod tests {
                 "analyst",
                 ClassificationLevel::Secret,
             )),
+            webhook_targets: Arc::new(Vec::new()),
+            federation_pull_url: None,
+            federation_client_cn: None,
         }
     }
 

@@ -47,6 +47,9 @@ pub struct FederationPeers {
     pub usa_publisher: Option<String>,
     #[serde(default)]
     pub gbr_publisher: Option<String>,
+    /// Webhook URL on the allied consumer notified after publisher journal append.
+    #[serde(default)]
+    pub gbr_notify: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
@@ -102,6 +105,13 @@ impl FederationConfig {
                     .into_owned();
             }
         }
+        if let Some(pki_env) = &mut self.local_node.pki_env {
+            if !Path::new(pki_env).is_absolute() {
+                if let Some(dir) = base_dir {
+                    *pki_env = dir.join(&*pki_env).to_string_lossy().into_owned();
+                }
+            }
+        }
         if let Some(mtls) = &mut self.local_node.mtls {
             if let Some(ca) = &mtls.client_ca {
                 if !Path::new(ca).is_absolute() {
@@ -131,6 +141,48 @@ impl FederationConfig {
             .as_ref()
             .map(|m| m.require_client_auth)
             .unwrap_or(false)
+    }
+
+    pub fn client_ca_path(&self) -> Option<&str> {
+        self.local_node
+            .mtls
+            .as_ref()
+            .and_then(|m| m.client_ca.as_deref())
+    }
+
+    pub fn peer_sync_url(&self, role: &str) -> Option<&str> {
+        match role {
+            "usa_publisher" | "usa" => self.replication.peers.usa_publisher.as_deref(),
+            "gbr_publisher" | "gbr" => self.replication.peers.gbr_publisher.as_deref(),
+            _ => None,
+        }
+    }
+
+    pub fn peer_notify_url(&self, role: &str) -> Option<&str> {
+        match role {
+            "gbr_notify" | "gbr" => self.replication.peers.gbr_notify.as_deref(),
+            _ => None,
+        }
+    }
+
+    /// Load `KEY=VALUE` pairs from the configured `pki_env` file into the process environment.
+    pub fn apply_pki_env(&self) -> TransportResult<()> {
+        let Some(path) = &self.local_node.pki_env else {
+            return Ok(());
+        };
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            TransportError::Validation(format!("read PKI env {}: {e}", path))
+        })?;
+        for line in content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((key, value)) = line.split_once('=') {
+                std::env::set_var(key.trim(), value.trim());
+            }
+        }
+        Ok(())
     }
 }
 

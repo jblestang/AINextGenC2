@@ -1234,6 +1234,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "toml",
+ "ureq",
 ]
 
 [[package]]
@@ -1241,6 +1242,7 @@ name = "mim-transport-http"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64",
  "hyper",
  "hyper-util",
  "mim-core",

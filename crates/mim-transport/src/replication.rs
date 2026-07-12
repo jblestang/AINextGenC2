@@ -5,7 +5,8 @@ use crate::remote::FederationPublisher;
 use crate::secured::SecuredExchangeBroker;
 
 /// Result of applying replication journal entries from a publisher.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReplicationApplyReport {
     pub applied: usize,
     pub skipped: usize,

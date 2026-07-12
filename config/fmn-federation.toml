@@ -15,6 +15,8 @@ client_ca = "fixtures/coalition-client-ca.pem"
 # Allied nodes pull PEP-filtered journals from publisher sync endpoints.
 usa_publisher = "https://usa-national-c2.fmn.mil/mip4-ies/v1/sync"
 gbr_publisher = "https://gbr-allied-c2.fmn.mil/mip4-ies/v1/sync"
+# Consumer webhook invoked after publisher journal append (notify + pull).
+gbr_notify = "https://gbr-allied-c2.fmn.mil/mip4-ies/v1/replication/notify"
 
 [replication.policy]
 # Sync responses are filtered by the publisher PEP for the mTLS client identity.

@@ -1,6 +1,6 @@
 # AINextGenC2 — Precise Status
 
-Last verified: **2026-07-12** (merged federation, NMB/KAS keys, PEP/PDP allied example).
+Last verified: **2026-07-12** (coalition exercise tier: JSON-LD, LDAP/SAML PIP, KAS ABAC, webhook notify+pull).
 
 Run the commands in [Verification](#verification) to reproduce these numbers locally.
 
@@ -71,7 +71,7 @@ Import pipeline:
 | Tier | Status | Notes |
 |------|--------|-------|
 | **Development / lab** | **Ready** | Full stack; conformance PKI; all compliance suites pass |
-| **Coalition exercise** | **Partial** | Requires production PKI (`NmbTrustStore`), TLS/mTLS, SPIF-administered guard, WORM/accredited SIEM |
+| **Coalition exercise** | **Ready** | Config-driven federation (`FederationConfig`); production PKI via `MIM_NMB_TRUST` + `pki_env`; HTTPS/mTLS + LDAP/SAML PIP → PEP; webhook notify + pull replication; `coalition_exercise` runner |
 | **Classified accredited** | **Not ready** | FIPS-validated module build, HSM, WORM audit, formal guard accreditation |
 
 ---
@@ -80,14 +80,14 @@ Import pipeline:
 
 | Subsystem | Lab / conformance | Operational pilot | Gap |
 |-----------|-------------------|-------------------|-----|
-| STANAG 4774/4778 | Ready | Partial | Full national extensions; LDAP/SAML clearance |
+| STANAG 4774/4778 | Ready | Partial | Full national extensions in production IdP |
 | ZTDF (ACP-240 Supp. 3–4) | Ready (encoding + ABAC decrypt gate) | Partial | Remote KAS protocol; full OpenTDF schema |
 | DCS cross-domain guard | Ready (config + audit) | Partial | Conformance keys in demos; no accredited guard |
-| MIP4-IES transport | Ready (100% dimensional + HTTPS/JSON-LD E2E) | Partial | Push/webhook replication; NATO vectors |
-| Policy plane (PIP/PDP/PEP) | Ready (caveats + mission + LDAP/SAML PIP) | Partial | No full CMBAC; live LDAP server in prod |
-| Crypto / PKI | FIPS 140-3 default + separate NMB/KAS keys | Partial | RSA outside FIPS module; HSM not integrated |
+| MIP4-IES transport | Ready (100% dimensional + HTTPS/JSON-LD E2E) | Ready | NATO accreditation vectors; full XPath |
+| Policy plane (PIP/PDP/PEP) | Ready (caveats + mission + LDAP/SAML PIP) | Ready | No full CMBAC; production IdP wiring |
+| Crypto / PKI | FIPS 140-3 default + separate NMB/KAS keys | Ready | RSA outside FIPS module; HSM not integrated |
 | Audit | Durable envelope JSONL + SIEM export | Partial | No WORM media; HTTP SIEM is best-effort |
-| Scenarios | 5 demos | Demo only | Synthetic data; no live C2 integration |
+| Scenarios | 6 demos + coalition exercise | Ready | Synthetic data; no live C2 integration |
 
 ---
 
@@ -125,6 +125,7 @@ The DCS cross-domain scenario signs audit records, persists envelopes when confi
 | `dcs_cross_domain` | `cargo run --example dcs_cross_domain` | STANAG label + NMBS + ZTDF + guard downgrade + durable audit |
 | `mip4_ies_exchange` | `cargo run --example mip4_ies_exchange` | PEP-gated PutObject / GetByFilter |
 | `allied_sensor_retrieval` | `cargo run --example allied_c2_sensor_retrieval` | USA→GBR coalition sync; set `MIM_FEDERATION_HTTP=1` for HTTPS federation |
+| `coalition_exercise` | `cargo run --example coalition_exercise` | Config-driven FMN exercise (`config/fmn-federation.toml`); production PKI via `pki_env` |
 | `transport_exchange` | library API | Secured broker publish + filter |
 
 **Not yet implemented:** SAR mission compartment, national/coalition dual-broker separation, LOC tactical release scenarios.
@@ -164,7 +165,7 @@ MIP4-IES transport detail: [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.
 | LDAP PIP (fixture + live LDAP + SAML bearer) | **Implemented** |
 | Structured NATO clearance (XML/LDAP/SAML) | **Partial** (live LDAP/SAML lab adapters) |
 | Full CMBAC permissive/restrictive category matrix | **Not implemented** |
-| SAML PIP integration | **Not implemented** |
+| SAML PIP integration (bearer claims) | **Implemented** (lab profile; JSON claims in `Authorization: Bearer`) |
 
 ### STANAG 4774 handling caveats (PDP)
 
@@ -192,7 +193,10 @@ SecurityDomain::new("DOMAIN-SAR", "SAR High Side", ClassificationLevel::Secret)
 cargo test --workspace
 cargo test -p mim-transport-http --test https_e2e
 cargo test -p mim-transport-http --test federation_e2e
+cargo test -p mim-transport-http --test webhook_e2e
+cargo test -p mim-transport-http --test saml_identity_e2e
 MIM_FEDERATION_HTTP=1 cargo run --example allied_c2_sensor_retrieval
+MIM_CONFORMANCE_KEYS=1 cargo run --example coalition_exercise
 cargo run -p ainextgenc2
 cargo run -p ainextgenc2 -- --labeling
 cargo run -p ainextgenc2 -- --mip4

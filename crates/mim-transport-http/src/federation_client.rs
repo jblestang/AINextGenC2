@@ -24,10 +24,7 @@ impl HttpFederationClient {
     pub fn new(sync_url: impl Into<String>) -> TransportResult<Self> {
         let sync_url = sync_url.into();
         let objects_base_url = derive_objects_base_url(&sync_url)?;
-        let client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
-            .build()
-            .map_err(|e| TransportError::Validation(format!("HTTP client: {e}")))?;
+        let client = Self::build_http_client()?;
         Ok(Self {
             client,
             sync_url,
@@ -56,14 +53,28 @@ impl HttpFederationClient {
         &self.sync_url
     }
 
-    /// Build a client for a coalition peer URL from [`FederationConfig`].
+    /// Build a client for a coalition peer from [`FederationConfig`].
     pub fn from_federation_config(
         config: &FederationConfig,
-        peer_sync_url: &str,
+        peer_role: &str,
         client_cn: impl Into<String>,
     ) -> TransportResult<Self> {
-        let _ = config;
-        Self::new(peer_sync_url)?.with_client_cn(client_cn)
+        let sync_url = config.peer_sync_url(peer_role).ok_or_else(|| {
+            TransportError::InvalidRequest(format!(
+                "federation config has no peer sync URL for '{peer_role}'"
+            ))
+        })?;
+        Self::new(sync_url)?.with_client_cn(client_cn)
+    }
+
+    fn build_http_client() -> TransportResult<reqwest::Client> {
+        let mut builder = reqwest::Client::builder();
+        if mim_crypto::conformance_keys_enabled() {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+        builder
+            .build()
+            .map_err(|e| TransportError::Validation(format!("HTTP client: {e}")))
     }
 
     /// Pull PEP-filtered journal entries and replicate objects into a local broker.

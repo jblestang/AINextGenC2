@@ -24,6 +24,7 @@ pub mod message;
 pub mod persistence;
 pub mod remote;
 pub mod replication;
+pub mod replication_notify;
 pub mod rest;
 pub mod secured;
 pub mod wire;
@@ -44,6 +45,7 @@ pub use federation::FederationConfig;
 pub use remote::FederationPublisher;
 pub use persistence::FileExchangeStore;
 pub use replication::{ReplicationAgent, ReplicationApplyReport};
+pub use replication_notify::{notify_webhooks, ReplicationNotifyPayload};
 pub use rest::{paths, encode_oid_for_path, filter_from_query, HttpMethod, RestRoute};
 pub use secured::SecuredExchangeBroker;
 pub use wire::{
