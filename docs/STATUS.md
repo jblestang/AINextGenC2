@@ -1,6 +1,6 @@
 # AINextGenC2 — Precise Status
 
-Last verified: **2026-07-12** (coalition exercise tier: JSON-LD, LDAP/SAML PIP, KAS ABAC, webhook notify+pull).
+Last verified: **2026-07-12** (coalition exercise tier: JSON-LD, LDAP/SAML PIP, KAS ABAC, webhook notify+pull with retry/fail-closed, `FederationPkiConfig`).
 
 Run the commands in [Verification](#verification) to reproduce these numbers locally.
 
@@ -71,7 +71,7 @@ Import pipeline:
 | Tier | Status | Notes |
 |------|--------|-------|
 | **Development / lab** | **Ready** | Full stack; conformance PKI; all compliance suites pass |
-| **Coalition exercise** | **Ready (pilot)** | Dual-node notify+pull runner; `HttpExchangeConfig::coalition_exercise` (identity required); live LDAP CI; production via `--production` + `pki_env` |
+| **Coalition exercise** | **Ready (pilot)** | Dual-node notify+pull runner; `HttpExchangeConfig::from_federation` loads PKI/LDAP/notify from TOML; live LDAP CI; production via `--production` + `FederationPkiConfig` |
 | **Classified accredited** | **Partial (pilot)** | WORM audit + accredited guard profile; FIPS-validated module build, HSM, formal guard accreditation still open |
 
 ---
@@ -138,10 +138,10 @@ The DCS cross-domain scenario signs audit records, persists envelopes when confi
 |-----------|--------|
 | USA publisher + GBR consumer nodes (HTTPS) | Implemented (`NotifyPull` default) |
 | PEP-filtered sync (releasability gate) | Implemented |
-| Webhook notify → consumer pull | Implemented + E2E test |
-| mTLS/LDAP identity (no fallback subject) | Implemented (`coalition_exercise` config) |
+| Webhook notify → consumer pull | Implemented + E2E test; retry/backoff + delivery report; optional `failClosed` on PUT |
+| mTLS/LDAP identity (no fallback subject) | Implemented (`from_federation` / coalition exercise config) |
 | Live LDAP PIP in CI | Implemented (OpenLDAP docker) |
-| Production PKI path | Implemented (`--production`, `pki_env`) |
+| Production PKI path | Implemented (`--production`, `FederationPkiConfig` / `resolved_pki_config`) |
 | Dual-broker SAR/LOC separation | Not implemented |
 | Live sensor/C2 adapters | Not implemented |
 

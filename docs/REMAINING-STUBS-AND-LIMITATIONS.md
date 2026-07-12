@@ -36,7 +36,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | Tier | Status | Blockers |
 |------|--------|----------|
 | **Lab / development** | Ready | None — full stack runs with conformance PKI |
-| **Coalition exercise** | Partial | Production PKI not default; HTTP server uses conformance trust store; no live HTTPS E2E in CI; no SAR/LOC/dual-broker scenarios; SIEM forward is best-effort |
+| **Coalition exercise** | Partial | No SAR/LOC/dual-broker scenarios; SIEM forward is best-effort (webhook notify has retry/report) |
 | **Classified accredited** | Partial (pilot) | FIPS-validated module not default CI path; RSA outside FIPS boundary; no HSM/PKCS#11; WORM audit + accredited guard profile (pilot); no full CMBAC; no LDAP/SAML PIP |
 
 ---
@@ -90,6 +90,8 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | No JSON-LD wire profile in CI | `serialize` JSON-LD tests + `get_by_oid_returns_jsonld` + `https_get_returns_jsonld` |
 | KAS unwrap without ABAC gate on DCS path | `ZtdfPackage::decrypt_with_policy`; `CrossDomainTransfer::receive_ztdf_on_target` |
 | NMBS and KAS keys collapsed in demos | Separate `conformance_key_ring()` / `conformance_kas_keypair()` hierarchies |
+| Webhook notify fire-and-forget | `notify_webhooks_with_options()` — synchronous retry, `ReplicationNotifyReport`, optional `failClosed` on PUT |
+| `apply_pki_env()` global mutation in coalition paths | `FederationPkiConfig` + `resolved_pki_config()`; `HttpExchangeConfig::from_federation()` loads PEM paths explicitly |
 
 ---
 
@@ -215,7 +217,8 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 
 - **Implemented:** `FileExchangeStore` snapshots (`exchange.json`) + append-only `exchange.journal.jsonl`
 - **Implemented:** `HttpFederationClient` pulls PEP-filtered `/mip4-ies/v1/sync` and fetches objects over HTTPS (`replicate_into`)
-- **Limitation:** No distributed consensus; journal poll + HTTP fetch only (no push/webhook replication)
+- **Implemented:** Coalition notify+pull — publisher POSTs `ReplicationNotifyPayload` to consumer webhooks with retry/backoff (`[replication.notify]` in `config/fmn-federation.toml`)
+- **Limitation:** No distributed consensus; consumers still pull journal/objects (webhook is a trigger, not push replication)
 
 ### 7.2 HTTP server — REST CRUD + wire formats
 
@@ -290,6 +293,8 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | 2 | Production PKI defaults (`MIM_NMB_TRUST`, feature-flag conformance) | Coalition exercise | Low–medium | **Done** |
 | 3 | Live HTTPS E2E in CI | Coalition exercise / MIP4 pilot | Medium | **Done** |
 | 4 | LDAP/SAML PIP (structured NATO clearance) | Coalition exercise | Medium | **Partial** (fixture + live LDAP + SAML bearer) |
+| 4a | Webhook notify reliability (retry, report, fail-closed) | Coalition exercise | Low | **Done** |
+| 4b | Federation PKI without `apply_pki_env` mutation | Coalition exercise | Low | **Done** |
 | 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | **Partial** (wire + CI E2E; NATO vectors open) |
 | 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | **Partial** (local + HTTP KAS stub; PEP gate on DCS receive) |
 | 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | **Partial** (`WormAuditSink`, accredited guard profile; hardware WORM + TLS/auth open) |

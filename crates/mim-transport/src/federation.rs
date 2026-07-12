@@ -39,6 +39,52 @@ pub struct FederationReplication {
     pub peers: FederationPeers,
     #[serde(default)]
     pub policy: FederationReplicationPolicy,
+    #[serde(default)]
+    pub notify: FederationNotifyConfig,
+}
+
+/// Coalition replication webhook delivery policy.
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+pub struct FederationNotifyConfig {
+    #[serde(default = "default_notify_attempts")]
+    pub max_attempts: u32,
+    #[serde(default = "default_notify_backoff_ms")]
+    pub initial_backoff_ms: u64,
+    #[serde(default = "default_notify_timeout_secs")]
+    pub timeout_secs: u64,
+    #[serde(default)]
+    pub fail_closed: bool,
+}
+
+fn default_notify_attempts() -> u32 {
+    3
+}
+
+fn default_notify_backoff_ms() -> u64 {
+    100
+}
+
+fn default_notify_timeout_secs() -> u64 {
+    5
+}
+
+impl Default for FederationNotifyConfig {
+    fn default() -> Self {
+        Self {
+            max_attempts: default_notify_attempts(),
+            initial_backoff_ms: default_notify_backoff_ms(),
+            timeout_secs: default_notify_timeout_secs(),
+            fail_closed: false,
+        }
+    }
+}
+
+/// Production PKI paths parsed from a `pki_env` file (no process environment mutation).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FederationPkiConfig {
+    pub nmb_trust: Vec<String>,
+    pub nmb_signing_key: String,
+    pub kas_signing_key: String,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Default)]
@@ -170,30 +216,121 @@ impl FederationConfig {
         &self.local_node.ldap_config
     }
 
+    /// Parse production PKI PEM paths from `pki_env` without mutating `std::env`.
+    pub fn resolved_pki_config(&self) -> TransportResult<Option<FederationPkiConfig>> {
+        let Some(path) = &self.local_node.pki_env else {
+            return Ok(None);
+        };
+        parse_pki_env_file(path).map(Some)
+    }
+
+    pub fn notify_options(&self) -> crate::replication_notify::ReplicationNotifyOptions {
+        let notify = &self.replication.notify;
+        crate::replication_notify::ReplicationNotifyOptions {
+            max_attempts: notify.max_attempts,
+            initial_backoff_ms: notify.initial_backoff_ms,
+            timeout_secs: notify.timeout_secs,
+        }
+    }
+
+    pub fn notify_fail_closed(&self) -> bool {
+        self.replication.notify.fail_closed
+    }
+
     /// Wire `MIM_LDAP_PIP_CONFIG` for [`SubjectResolver::from_env`].
+    ///
+    /// Prefer [`ldap_config_path`] with [`SubjectResolver::from_config_path`] when possible.
     pub fn apply_ldap_env(&self) {
         std::env::set_var("MIM_LDAP_PIP_CONFIG", &self.local_node.ldap_config);
     }
 
     /// Load `KEY=VALUE` pairs from the configured `pki_env` file into the process environment.
+    ///
+    /// Prefer [`resolved_pki_config`] and explicit PEM loading to avoid global env mutation.
     pub fn apply_pki_env(&self) -> TransportResult<()> {
-        let Some(path) = &self.local_node.pki_env else {
+        let Some(config) = self.resolved_pki_config()? else {
             return Ok(());
         };
-        let content = std::fs::read_to_string(path).map_err(|e| {
-            TransportError::Validation(format!("read PKI env {}: {e}", path))
-        })?;
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() || line.starts_with('#') {
-                continue;
-            }
-            if let Some((key, value)) = line.split_once('=') {
-                std::env::set_var(key.trim(), value.trim());
-            }
-        }
+        apply_pki_config_to_env(&config);
         Ok(())
     }
+}
+
+fn parse_pki_env_file(path: impl AsRef<Path>) -> TransportResult<FederationPkiConfig> {
+    let path = path.as_ref();
+    let content = std::fs::read_to_string(path).map_err(|e| {
+        TransportError::Validation(format!("read PKI env {}: {e}", path.display()))
+    })?;
+    let mut nmb_trust = None;
+    let mut nmb_signing_key = None;
+    let mut kas_signing_key = None;
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        let value = value.trim();
+        match key {
+            mim_crypto::ENV_NMB_TRUST => {
+                nmb_trust = Some(
+                    value
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|segment| !segment.is_empty())
+                        .map(str::to_owned)
+                        .collect::<Vec<_>>(),
+                );
+            }
+            mim_crypto::ENV_NMB_SIGNING_KEY => nmb_signing_key = Some(value.to_owned()),
+            mim_crypto::ENV_KAS_SIGNING_KEY => kas_signing_key = Some(value.to_owned()),
+            _ => {}
+        }
+    }
+    let nmb_trust = nmb_trust.filter(|paths| !paths.is_empty()).ok_or_else(|| {
+        TransportError::Validation(format!(
+            "PKI env {} missing {}",
+            path.display(),
+            mim_crypto::ENV_NMB_TRUST
+        ))
+    })?;
+    let nmb_signing_key = nmb_signing_key.ok_or_else(|| {
+        TransportError::Validation(format!(
+            "PKI env {} missing {}",
+            path.display(),
+            mim_crypto::ENV_NMB_SIGNING_KEY
+        ))
+    })?;
+    let kas_signing_key = kas_signing_key.ok_or_else(|| {
+        TransportError::Validation(format!(
+            "PKI env {} missing {}",
+            path.display(),
+            mim_crypto::ENV_KAS_SIGNING_KEY
+        ))
+    })?;
+    Ok(FederationPkiConfig {
+        nmb_trust,
+        nmb_signing_key,
+        kas_signing_key,
+    })
+}
+
+fn apply_pki_config_to_env(config: &FederationPkiConfig) {
+    std::env::set_var(
+        mim_crypto::ENV_NMB_TRUST,
+        config.nmb_trust.join(","),
+    );
+    std::env::set_var(
+        mim_crypto::ENV_NMB_SIGNING_KEY,
+        &config.nmb_signing_key,
+    );
+    std::env::set_var(
+        mim_crypto::ENV_KAS_SIGNING_KEY,
+        &config.kas_signing_key,
+    );
 }
 
 #[cfg(test)]
@@ -209,6 +346,18 @@ mod tests {
             let config = FederationConfig::load_path(&path).expect("load");
             assert_eq!(config.local_node.id, "usa-national-c2");
             assert!(config.replication.policy.pep_filtered_sync);
+            assert_eq!(config.replication.notify.max_attempts, 3);
+            let pki = config.resolved_pki_config().expect("pki");
+            assert!(pki.is_some());
         }
+    }
+
+    #[test]
+    fn resolved_pki_config_parses_without_env_mutation() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../config/pki.env.example");
+        let config = parse_pki_env_file(&path).expect("parse");
+        assert!(!config.nmb_trust.is_empty());
+        assert!(!config.nmb_signing_key.is_empty());
+        assert!(!config.kas_signing_key.is_empty());
     }
 }

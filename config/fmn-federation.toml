@@ -22,3 +22,9 @@ gbr_notify = "https://gbr-allied-c2.fmn.mil/mip4-ies/v1/replication/notify"
 # Sync responses are filtered by the publisher PEP for the mTLS client identity.
 pep_filtered_sync = true
 journal_persistence = "exchange.json"
+
+[replication.notify]
+maxAttempts = 3
+initialBackoffMs = 100
+timeoutSecs = 5
+failClosed = false

@@ -177,13 +177,8 @@ impl AlliedSensorRetrievalScenario {
         let prepared = self.prepare_publisher(stack)?;
         let tls = lab_tls_identity().map_err(TransportError::Validation)?;
 
-        let ldap_path = federation.map(FederationConfig::ldap_config_path);
-        if let Some(fed) = federation {
-            fed.apply_ldap_env();
-        }
-
-        let config = if federation.is_some() {
-            HttpExchangeConfig::coalition_exercise(pki_mode, ldap_path)
+        let config = if let Some(fed) = federation {
+            HttpExchangeConfig::from_federation(pki_mode, fed)
                 .map_err(|e| TransportError::Validation(e.to_string()))?
         } else {
             match pki_mode {

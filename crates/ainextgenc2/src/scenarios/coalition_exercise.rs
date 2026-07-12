@@ -29,9 +29,8 @@ impl CoalitionExerciseScenario {
         &self.federation
     }
 
-    /// Production coalition exercise: `pki_env` + `MIM_NMB_TRUST` from environment.
+    /// Production coalition exercise: explicit PKI paths from federation config.
     pub async fn run(&self, stack: &MimStack) -> mim_transport::TransportResult<AlliedSensorRetrievalOutput> {
-        self.federation.apply_pki_env()?;
         self.run_with_mode(stack, PkiMode::Production).await
     }
 
