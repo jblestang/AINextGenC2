@@ -21,3 +21,6 @@ toml = "0.8"
 base64 = { workspace = true }
 ldap3 = { version = "0.11", default-features = false, features = ["sync"] }
 ureq = { version = "2.10", default-features = false, features = ["json"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt", "macros"] }
