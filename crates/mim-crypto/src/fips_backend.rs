@@ -1,12 +1,14 @@
-//! FIPS 140-3 validated cryptographic backend via AWS-LC (AES-GCM, SHA-256) with RSA via `rsa` crate.
+//! FIPS 140-3 validated cryptographic backend via AWS-LC (AES-GCM, SHA-256, RSA-PSS, RSA-OAEP).
 
 use aws_lc_rs::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
 use aws_lc_rs::digest::{digest, SHA256};
+use aws_lc_rs::encoding::AsDer;
 use aws_lc_rs::rand::{SecureRandom, SystemRandom};
-use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey};
-use rsa::pss::{Signature, SigningKey as PssSigningKey, VerifyingKey as PssVerifyingKey};
-use rsa::{Oaep, PublicKey, RsaPrivateKey, RsaPublicKey};
-use sha2::Sha256;
+use aws_lc_rs::rsa::{
+    KeySize, OAEP_SHA256_MGF1SHA256, OaepPrivateDecryptingKey, OaepPublicEncryptingKey,
+    PrivateDecryptingKey, PublicEncryptingKey,
+};
+use aws_lc_rs::signature::{self, KeyPair as RsaSigningKeyPair, RsaKeyPair, RSA_PSS_2048_8192_SHA256, RSA_PSS_SHA256};
 
 use crate::error::{CryptoError, CryptoResult};
 use crate::keys::{KeyPair, SigningKey, VerifyingKey};
@@ -19,15 +21,15 @@ impl CryptoProvider for FipsProvider {
     fn name(&self) -> &'static str {
         #[cfg(feature = "fips-validated")]
         {
-            return "aws-lc-rs (FIPS 140-3 validated)";
+            "aws-lc-rs (FIPS 140-3 validated, RSA inside boundary)"
         }
         #[cfg(all(feature = "fips", not(feature = "fips-validated")))]
         {
-            return "aws-lc-rs (FIPS-capable)";
+            "aws-lc-rs (FIPS-capable, RSA inside boundary)"
         }
         #[cfg(not(any(feature = "fips", feature = "fips-validated")))]
         {
-            return "aws-lc-rs (FIPS)";
+            "aws-lc-rs (FIPS)"
         }
     }
 
@@ -39,46 +41,44 @@ impl CryptoProvider for FipsProvider {
     }
 
     fn validate_signing_key(&self, pkcs8_der: &[u8]) -> CryptoResult<()> {
-        RsaPrivateKey::from_pkcs8_der(pkcs8_der)
-            .map(|_| ())
+        RsaKeyPair::from_pkcs8(pkcs8_der)
             .map_err(|e| CryptoError::InvalidKey(e.to_string()))
+            .map(|_| ())
     }
 
     fn validate_verifying_key(&self, spki_der: &[u8]) -> CryptoResult<()> {
-        RsaPublicKey::from_public_key_der(spki_der)
-            .map(|_| ())
+        PublicEncryptingKey::from_der(spki_der)
             .map_err(|e| CryptoError::InvalidKey(e.to_string()))
+            .map(|_| ())
     }
 
     fn generate_rsa_keypair(&self, key_id: &str) -> CryptoResult<KeyPair> {
-        let mut rng = rand::thread_rng();
-        let private = RsaPrivateKey::new(&mut rng, 2048)
+        let key_pair = RsaKeyPair::generate(KeySize::Rsa2048)
             .map_err(|e| CryptoError::Operation(e.to_string()))?;
-        let pkcs8 = private
-            .to_pkcs8_der()
+        let pkcs8 = key_pair
+            .as_der()
             .map_err(|e| CryptoError::Operation(e.to_string()))?;
-        KeyPair::from_pkcs8_der(key_id, pkcs8.as_bytes())
+        KeyPair::from_pkcs8_der(key_id, pkcs8.as_ref())
     }
 
     fn public_key_from_private(&self, pkcs8_der: &[u8]) -> CryptoResult<Vec<u8>> {
-        let private = RsaPrivateKey::from_pkcs8_der(pkcs8_der)
+        let key_pair = RsaKeyPair::from_pkcs8(pkcs8_der)
             .map_err(|e| CryptoError::InvalidKey(e.to_string()))?;
-        let public = RsaPublicKey::from(&private);
-        public
-            .to_public_key_der()
-            .map(|der| der.to_vec())
-            .map_err(|e| CryptoError::Operation(e.to_string()))
+        let public = RsaSigningKeyPair::public_key(&key_pair)
+            .as_der()
+            .map_err(|e| CryptoError::Operation(e.to_string()))?;
+        Ok(public.as_ref().to_vec())
     }
 
     fn sign_rsa_pss_sha256(&self, key: &SigningKey, message: &[u8]) -> CryptoResult<Vec<u8>> {
-        let private = RsaPrivateKey::from_pkcs8_der(key.der())
+        let key_pair = RsaKeyPair::from_pkcs8(key.der())
             .map_err(|e| CryptoError::InvalidKey(e.to_string()))?;
-        let signing_key = PssSigningKey::<Sha256>::new(private);
-        use rsa::signature::{RandomizedSigner, SignatureEncoding};
-        let mut rng = rand::thread_rng();
-        let signature: Signature = signing_key
-            .sign_with_rng(&mut rng, message);
-        Ok(signature.to_bytes().to_vec())
+        let rng = SystemRandom::new();
+        let mut signature = vec![0u8; key_pair.public_modulus_len()];
+        key_pair
+            .sign(&RSA_PSS_SHA256, &rng, message, &mut signature)
+            .map_err(|e| CryptoError::Operation(e.to_string()))?;
+        Ok(signature)
     }
 
     fn verify_rsa_pss_sha256(
@@ -87,14 +87,9 @@ impl CryptoProvider for FipsProvider {
         message: &[u8],
         signature: &[u8],
     ) -> CryptoResult<()> {
-        let public = RsaPublicKey::from_public_key_der(key.der())
-            .map_err(|e| CryptoError::InvalidKey(e.to_string()))?;
-        let verifying_key = PssVerifyingKey::<Sha256>::new(public);
-        let sig = Signature::try_from(signature)
-            .map_err(|e| CryptoError::Operation(e.to_string()))?;
-        use rsa::signature::Verifier;
-        verifying_key
-            .verify(message, &sig)
+        let public_key = signature::UnparsedPublicKey::new(&RSA_PSS_2048_8192_SHA256, key.der());
+        public_key
+            .verify(message, signature)
             .map_err(|_| CryptoError::VerificationFailed)
     }
 
@@ -103,13 +98,20 @@ impl CryptoProvider for FipsProvider {
         public_key: &VerifyingKey,
         content_key: &ContentEncryptionKey,
     ) -> CryptoResult<Vec<u8>> {
-        let public = RsaPublicKey::from_public_key_der(public_key.der())
+        let public = PublicEncryptingKey::from_der(public_key.der())
             .map_err(|e| CryptoError::InvalidKey(e.to_string()))?;
-        let padding = Oaep::new::<Sha256>();
-        let mut rng = rand::thread_rng();
-        public
-            .encrypt(&mut rng, padding, content_key.as_bytes())
-            .map_err(|e| CryptoError::Operation(e.to_string()))
+        let oaep = OaepPublicEncryptingKey::new(public)
+            .map_err(|e| CryptoError::Operation(e.to_string()))?;
+        let mut ciphertext = vec![0u8; oaep.ciphertext_size()];
+        let written = oaep
+            .encrypt(
+                &OAEP_SHA256_MGF1SHA256,
+                content_key.as_bytes(),
+                &mut ciphertext,
+                None,
+            )
+            .map_err(|e| CryptoError::Operation(e.to_string()))?;
+        Ok(written.to_vec())
     }
 
     fn unwrap_key_rsa_oaep_sha256(
@@ -117,19 +119,21 @@ impl CryptoProvider for FipsProvider {
         private_key: &SigningKey,
         wrapped: &[u8],
     ) -> CryptoResult<ContentEncryptionKey> {
-        let private = RsaPrivateKey::from_pkcs8_der(private_key.der())
+        let private = PrivateDecryptingKey::from_pkcs8(private_key.der())
             .map_err(|e| CryptoError::InvalidKey(e.to_string()))?;
-        let padding = Oaep::new::<Sha256>();
-        let bytes = private
-            .decrypt(padding, wrapped)
+        let oaep = OaepPrivateDecryptingKey::new(private)
             .map_err(|e| CryptoError::Operation(e.to_string()))?;
-        if bytes.len() != 32 {
+        let mut plaintext = vec![0u8; oaep.min_output_size()];
+        let written = oaep
+            .decrypt(&OAEP_SHA256_MGF1SHA256, wrapped, &mut plaintext, None)
+            .map_err(|e| CryptoError::Operation(e.to_string()))?;
+        if written.len() != 32 {
             return Err(CryptoError::Operation(
                 "unwrapped key length is not 256 bits".into(),
             ));
         }
         let mut key = [0u8; 32];
-        key.copy_from_slice(&bytes);
+        key.copy_from_slice(written);
         Ok(ContentEncryptionKey::from_bytes(key))
     }
 
@@ -151,7 +155,10 @@ impl CryptoProvider for FipsProvider {
             .map_err(|e| CryptoError::Operation(e.to_string()))?;
         let tag_start = in_out.len().saturating_sub(16);
         let mut tag = [0u8; 16];
-        tag.copy_from_slice(&in_out[tag_start..]);
+        let tag_slice = in_out
+            .get(tag_start..)
+            .ok_or_else(|| CryptoError::Operation("AES-GCM tag missing".into()))?;
+        tag.copy_from_slice(tag_slice);
         in_out.truncate(tag_start);
         Ok(AesGcmCiphertext {
             iv,
@@ -182,5 +189,53 @@ impl CryptoProvider for FipsProvider {
         SystemRandom::new()
             .fill(buf)
             .map_err(|e| CryptoError::Operation(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used)]
+mod tests {
+    use crate::provider::{sign_nmb_binding, verify_nmb_binding};
+
+    use super::*;
+
+    #[test]
+    fn fips_rsa_pss_round_trip() {
+        let provider = FipsProvider;
+        let key_pair = provider
+            .generate_rsa_keypair("fips-test")
+            .expect("generate");
+        let message = b"label|digest";
+        let signature = provider
+            .sign_rsa_pss_sha256(key_pair.signing_key(), message)
+            .expect("sign");
+        provider
+            .verify_rsa_pss_sha256(key_pair.verifying_key(), message, &signature)
+            .expect("verify");
+    }
+
+    #[test]
+    fn fips_rsa_oaep_round_trip() {
+        let provider = FipsProvider;
+        let key_pair = provider
+            .generate_rsa_keypair("fips-wrap")
+            .expect("generate");
+        let cek = ContentEncryptionKey::from_bytes([7u8; 32]);
+        let wrapped = provider
+            .wrap_key_rsa_oaep_sha256(key_pair.verifying_key(), &cek)
+            .expect("wrap");
+        let unwrapped = provider
+            .unwrap_key_rsa_oaep_sha256(key_pair.signing_key(), &wrapped)
+            .expect("unwrap");
+        assert_eq!(unwrapped.as_bytes(), cek.as_bytes());
+    }
+
+    #[test]
+    fn nmb_binding_uses_fips_rsa() {
+        let provider = FipsProvider;
+        let key_pair = provider.generate_rsa_keypair("nmb").expect("generate");
+        let sig = sign_nmb_binding(key_pair.signing_key(), b"label-xml", "digest")
+            .expect("sign");
+        verify_nmb_binding(key_pair.verifying_key(), b"label-xml", "digest", &sig).expect("verify");
     }
 }

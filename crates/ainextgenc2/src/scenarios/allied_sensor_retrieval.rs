@@ -99,15 +99,16 @@ impl AlliedSensorRetrievalScenario {
         let usa_responses = usa_c2.publish_store(instances)?;
         let usa_published_count = usa_responses.len();
 
+        let gbr_subject = SubjectAttributes::new("gbr-allied-analyst", ClassificationLevel::Secret)
+            .with_nationality("GBR");
         let mut allied_broker = ExchangeBroker::new(registry.clone());
-        let replication = ReplicationAgent::pull_and_apply(
+        let replication = ReplicationAgent::pull_and_apply_for_subject(
             &mut allied_broker,
-            usa_c2.broker(),
+            &usa_c2,
+            gbr_subject.clone(),
             0,
         )?;
 
-        let gbr_subject = SubjectAttributes::new("gbr-allied-analyst", ClassificationLevel::Secret)
-            .with_nationality("GBR");
         let gbr_c2 = SecuredExchangeBroker::from_preset(
             allied_broker,
             gbr_subject,
@@ -247,7 +248,8 @@ mod tests {
 
         assert_eq!(output.sensor_name, "Patriot-01");
         assert_eq!(output.usa_published_count, 7);
-        assert_eq!(output.replication_applied, 7);
+        // PEP-filtered sync hides USA-only track 103 and USA-EYES-ONLY target from GBR analyst.
+        assert_eq!(output.replication_applied, 5);
         assert_eq!(output.gbr_target_count, 2);
         assert_eq!(output.gbr_track_count, 2);
         assert!(output.hostile_track_oid.is_some());

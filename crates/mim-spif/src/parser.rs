@@ -10,6 +10,7 @@ pub fn parse_spif_xml(data: &str) -> Result<SpifPolicy, String> {
 }
 
 /// Parse SPIF XML, optionally skipping XSD validation (for negative tests).
+#[allow(unused_assignments)]
 pub fn parse_spif_xml_with_options(data: &str, validate_xsd: bool) -> Result<SpifPolicy, String> {
     if validate_xsd {
         xsd::validate_spif_xsd(data)?;

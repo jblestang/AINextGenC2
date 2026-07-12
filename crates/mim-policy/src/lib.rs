@@ -21,12 +21,14 @@
 pub mod context;
 pub mod downgrade;
 pub mod error;
+pub mod ldap_pip;
 pub mod pap;
 pub mod pdp;
 pub mod pep;
 pub mod pip;
 pub mod spif_admin;
 pub mod store;
+pub mod subject_resolver;
 
 pub use context::{
     AccessOperation, EnvironmentAttributes, PolicyContext, ResourceAttributes, SubjectAttributes,
@@ -36,7 +38,12 @@ pub use error::{PolicyError, PolicyResult};
 pub use pap::PolicyAdministrationPoint;
 pub use pdp::{PolicyDecision, PolicyDecisionPoint, PolicyEffect};
 pub use pep::PolicyEnforcementPoint;
+pub use ldap_pip::{
+    CertFingerprintMapping, CertSubjectMapping, LdapPipConfig, LdapServerConfig,
+    LdapSubjectDirectory, LdapSubjectEntry,
+};
 pub use pip::PolicyInformationPoint;
+pub use subject_resolver::SubjectResolver;
 pub use spif_admin::{
     apply_spif_to_store, cross_domain_policy_from_spif, guard_domains_from_spif,
 };

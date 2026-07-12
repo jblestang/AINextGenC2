@@ -10,6 +10,7 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, put};
 use axum::{Json, Router};
 use mim_crypto::NmbTrustStore;
+use mim_policy::{SubjectAttributes, SubjectResolver};
 use mim_runtime::{SerializationFormat, Serializer};
 use mim_stanag4778::RestEnvelope;
 use mim_transport::envelope::unwrap_put_object_with_format;
@@ -27,11 +28,16 @@ use mim_transport::{
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
+use crate::identity::{resolve_request_subject, TlsClientIdentity, HEADER_MIM_CLIENT_CERT_SHA256};
+
 /// Shared HTTP application state.
 #[derive(Clone)]
 pub struct AppState {
     pub broker: Arc<Mutex<SecuredExchangeBroker>>,
     pub trust_store: NmbTrustStore,
+    pub subject_resolver: Arc<SubjectResolver>,
+    pub require_client_identity: bool,
+    pub fallback_subject: Option<SubjectAttributes>,
 }
 
 /// Build the MIP4-IES REST router (`/mip4-ies/v1/objects` CRUD + replication sync).
@@ -70,6 +76,7 @@ async fn put_object(
     headers: HeaderMap,
     body: String,
 ) -> Response {
+    let tls_identity = request_tls_identity(&headers);
     if let Err(err) = validate_mim_version(
         headers
             .get(HEADER_MIM_VERSION)
@@ -81,7 +88,7 @@ async fn put_object(
         Ok(envelope) => envelope,
         Err(err) => return map_error(TransportError::Serialization(err.to_string())),
     };
-    match handle_put(&state, &headers, envelope).await {
+    match handle_put(&state, &headers, tls_identity.as_ref(), envelope).await {
         Ok(response) => negotiated_response(
             &headers,
             WirePayloadFormat::Json,
@@ -97,6 +104,7 @@ async fn get_by_oid(
     headers: HeaderMap,
     Path(encoded_oid): Path<String>,
 ) -> Response {
+    let tls_identity = request_tls_identity(&headers);
     if let Err(err) = validate_mim_version(
         headers
             .get(HEADER_MIM_VERSION)
@@ -109,8 +117,13 @@ async fn get_by_oid(
     let path = format!("/mip4-ies/v1/objects/{oid}");
     match parse_get_by_oid(&path) {
         Ok(request) => {
+            let subject = match resolve_subject_for_request(&state, &headers, tls_identity.as_ref())
+            {
+                Ok(subject) => subject,
+                Err(err) => return map_error(err),
+            };
             let broker = state.broker.lock().await;
-            match broker.get_by_oid(request) {
+            match broker.get_by_oid_as(subject, request) {
                 Ok(response) => {
                     if format == WirePayloadFormat::Xml || format == WirePayloadFormat::JsonLd {
                         match serialize_instance(&response.instance, format) {
@@ -134,6 +147,7 @@ async fn get_by_filter(
     Query(query): Query<FilterQuery>,
 ) -> Response {
     let format = negotiated_format(&headers);
+    let tls_identity = request_tls_identity(&headers);
     let request = match filter_from_query(
         query.filter.as_deref(),
         query.class_name.as_deref(),
@@ -146,8 +160,12 @@ async fn get_by_filter(
         Err(err) => return map_error(err),
     };
 
+    let subject = match resolve_subject_for_request(&state, &headers, tls_identity.as_ref()) {
+        Ok(subject) => subject,
+        Err(err) => return map_error(err),
+    };
     let broker = state.broker.lock().await;
-    match broker.get_by_filter(request) {
+    match broker.get_by_filter_as(subject, request) {
         Ok(response) => {
             if format == WirePayloadFormat::Xml || format == WirePayloadFormat::JsonLd {
                 match serialize_instances(&response.instances, format) {
@@ -167,12 +185,18 @@ async fn delete_object(
     headers: HeaderMap,
     Path(encoded_oid): Path<String>,
 ) -> Response {
+    let tls_identity = request_tls_identity(&headers);
     let oid = percent_decode_path_segment(&encoded_oid);
     let path = format!("/mip4-ies/v1/objects/{oid}");
     match parse_delete(&path) {
         Ok(request) => {
+            let subject = match resolve_subject_for_request(&state, &headers, tls_identity.as_ref())
+            {
+                Ok(subject) => subject,
+                Err(err) => return map_error(err),
+            };
             let mut broker = state.broker.lock().await;
-            match broker.delete_object(request) {
+            match broker.delete_object_as(subject, request) {
                 Ok(response) => {
                     negotiated_response(&headers, WirePayloadFormat::Json, StatusCode::OK, &response)
                 }
@@ -188,15 +212,21 @@ async fn sync_changes(
     headers: HeaderMap,
     Query(query): Query<SyncQuery>,
 ) -> Response {
+    let tls_identity = request_tls_identity(&headers);
     let since = query.since.unwrap_or(0);
+    let subject = match resolve_subject_for_request(&state, &headers, tls_identity.as_ref()) {
+        Ok(subject) => subject,
+        Err(err) => return map_error(err),
+    };
     let broker = state.broker.lock().await;
-    let response = broker.sync_since(since);
+    let response = broker.sync_since_as(subject, since);
     negotiated_response(&headers, WirePayloadFormat::Json, StatusCode::OK, &response)
 }
 
 pub async fn handle_put(
     state: &AppState,
     headers: &HeaderMap,
+    tls_identity: Option<&TlsClientIdentity>,
     envelope: RestEnvelope,
 ) -> TransportResult<PutObjectResponse> {
     let payload_format = headers
@@ -234,9 +264,61 @@ pub async fn handle_put(
     }
     let request =
         unwrap_put_object_with_format(&envelope, &verifying_key, Some(payload_format))?;
+    let subject = resolve_subject_for_request(state, headers, tls_identity)?;
     let mut broker = state.broker.lock().await;
-    broker.put_object(request)
+    broker.put_object_as(subject, request)
 }
+
+fn policy_error_to_transport(error: mim_policy::PolicyError) -> TransportError {
+    match error {
+        mim_policy::PolicyError::Denied(msg) => TransportError::Forbidden(msg),
+        mim_policy::PolicyError::NotFound(msg) => TransportError::Forbidden(msg),
+        mim_policy::PolicyError::Invalid(msg) => TransportError::Validation(msg),
+        mim_policy::PolicyError::Validation(msg) => TransportError::Validation(msg),
+        mim_policy::PolicyError::Serialization(msg) => TransportError::Serialization(msg),
+    }
+}
+
+fn resolve_subject_for_request(
+    state: &AppState,
+    headers: &HeaderMap,
+    tls_identity: Option<&TlsClientIdentity>,
+) -> TransportResult<SubjectAttributes> {
+    resolve_request_subject(
+        state.subject_resolver.as_ref(),
+        headers,
+        tls_identity,
+        state.require_client_identity,
+    )
+    .or_else(|err| {
+        if let Some(fallback) = &state.fallback_subject {
+            if !state.require_client_identity {
+                return Ok(fallback.clone());
+            }
+        }
+        Err(policy_error_to_transport(err))
+    })
+}
+
+fn request_tls_identity(headers: &HeaderMap) -> Option<TlsClientIdentity> {
+    let cn = headers
+        .get("X-MIM-Tls-Client-CN")
+        .and_then(|value| value.to_str().ok())?
+        .to_owned();
+    let cert_sha256 = headers
+        .get(HEADER_MIM_CLIENT_CERT_SHA256)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    Some(TlsClientIdentity {
+        cn,
+        cert_sha256,
+        subject_dn: headers
+            .get("X-MIM-Tls-Client-DN")
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned),
+    })
+}
+
 
 fn negotiated_format(headers: &HeaderMap) -> WirePayloadFormat {
     negotiate_format(
@@ -358,7 +440,7 @@ mod tests {
     use mim_crypto::{conformance_keypair, NmbTrustStore};
     use mim_labeling::{ClassificationLevel, ConfidentialityLabel, LabelPolicy};
     use mim_model::Metadata;
-    use mim_policy::SubjectAttributes;
+    use mim_policy::{SubjectAttributes, SubjectResolver};
     use mim_runtime::MimInstance;
     use mim_transport::envelope::wrap_put_object;
     use mim_transport::message::PutObjectRequest;
@@ -448,6 +530,12 @@ mod tests {
         AppState {
             broker: Arc::new(Mutex::new(secured)),
             trust_store: NmbTrustStore::from_verifying_keys([keys.verifying_key().clone()]),
+            subject_resolver: Arc::new(SubjectResolver::conformance().expect("resolver")),
+            require_client_identity: false,
+            fallback_subject: Some(SubjectAttributes::new(
+                "analyst",
+                ClassificationLevel::Secret,
+            )),
         }
     }
 
@@ -491,7 +579,7 @@ mod tests {
                 .expect("header"),
         );
         let state = test_app_state();
-        handle_put(&state, &headers, envelope)
+        handle_put(&state, &headers, None, envelope)
             .await
             .expect("put");
         let broker = state.broker.lock().await;

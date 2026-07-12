@@ -1,5 +1,6 @@
 use crate::broker::ExchangeBroker;
 use crate::error::TransportResult;
+use crate::secured::SecuredExchangeBroker;
 
 /// Result of applying replication journal entries from a publisher.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,6 +21,35 @@ impl ReplicationAgent {
         since: u64,
     ) -> TransportResult<ReplicationApplyReport> {
         let sync = publisher.sync_since(since);
+        Self::apply_sync_response(consumer, publisher, sync)
+    }
+
+    /// Apply PEP-filtered journal entries from a secured publisher view.
+    pub fn pull_and_apply_secured(
+        consumer: &mut ExchangeBroker,
+        publisher: &SecuredExchangeBroker,
+        since: u64,
+    ) -> TransportResult<ReplicationApplyReport> {
+        let sync = publisher.sync_since(since);
+        Self::apply_sync_response(consumer, publisher.broker(), sync)
+    }
+
+    /// Apply PEP-filtered journal for a specific subscriber identity.
+    pub fn pull_and_apply_for_subject(
+        consumer: &mut ExchangeBroker,
+        publisher: &SecuredExchangeBroker,
+        subject: mim_policy::SubjectAttributes,
+        since: u64,
+    ) -> TransportResult<ReplicationApplyReport> {
+        let sync = publisher.sync_since_as(subject, since);
+        Self::apply_sync_response(consumer, publisher.broker(), sync)
+    }
+
+    fn apply_sync_response(
+        consumer: &mut ExchangeBroker,
+        publisher: &ExchangeBroker,
+        sync: crate::message::SyncResponse,
+    ) -> TransportResult<ReplicationApplyReport> {
         let mut applied = 0;
         let mut skipped = 0;
 
@@ -136,5 +166,71 @@ mod tests {
         let second = ReplicationAgent::pull_and_apply(&mut consumer, &publisher, 0).expect("second");
         assert_eq!(second.skipped, 1);
         assert_eq!(second.applied, 0);
+    }
+
+    trait WithMetadata {
+        fn with_metadata(self, metadata: mim_model::Metadata) -> Self;
+    }
+
+    impl WithMetadata for mim_runtime::MimInstance {
+        fn with_metadata(mut self, metadata: mim_model::Metadata) -> Self {
+            self.metadata = metadata;
+            self
+        }
+    }
+
+    #[test]
+    fn pep_filtered_replication_hides_secret_from_restricted_analyst() {
+        use crate::secured::SecuredExchangeBroker;
+
+        let registry = test_registry();
+        let mut publisher = ExchangeBroker::new(registry.clone());
+        let class_id = SemanticId::parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").expect("id");
+        let mut secret_meta = mim_model::Metadata::default();
+        secret_meta.security.policy = mim_core::Nillable::value("NATO".into());
+        secret_meta.security.classification = mim_core::Nillable::value("SECRET".into());
+        secret_meta.security.releasability = mim_core::Nillable::value("USA".into());
+        let secret = mim_runtime::MimInstance::new("Target", class_id)
+            .expect("instance")
+            .with_property(PropertyValue::string("nameText", "SECRET-1"))
+            .with_metadata(secret_meta);
+        publisher
+            .put_object(PutObjectRequest { instance: secret })
+            .expect("secret put");
+
+        let mut restricted_meta = mim_model::Metadata::default();
+        restricted_meta.security.policy = mim_core::Nillable::value("NATO".into());
+        restricted_meta.security.classification = mim_core::Nillable::value("RESTRICTED".into());
+        restricted_meta.security.releasability = mim_core::Nillable::value("USA".into());
+        let restricted = mim_runtime::MimInstance::new("Target", class_id)
+            .expect("instance")
+            .with_property(PropertyValue::string("nameText", "RESTRICTED-1"))
+            .with_metadata(restricted_meta);
+        publisher
+            .put_object(PutObjectRequest { instance: restricted })
+            .expect("restricted put");
+
+        let secured = SecuredExchangeBroker::from_preset(
+            publisher,
+            mim_policy::SubjectAttributes::new("publisher", mim_labeling::ClassificationLevel::Secret),
+            "DOMAIN-HIGH",
+        )
+        .expect("secured");
+        let restricted_subject =
+            mim_policy::SubjectAttributes::new("analyst", mim_labeling::ClassificationLevel::Restricted);
+
+        let sync = secured.sync_since_as(restricted_subject.clone(), 0);
+        assert_eq!(sync.entries.len(), 1);
+
+        let mut consumer = ExchangeBroker::new(registry);
+        let report = ReplicationAgent::pull_and_apply_for_subject(
+            &mut consumer,
+            &secured,
+            restricted_subject,
+            0,
+        )
+        .expect("apply");
+        assert_eq!(report.applied, 1);
+        assert_eq!(consumer.active_count(), 1);
     }
 }

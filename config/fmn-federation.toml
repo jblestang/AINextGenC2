@@ -1,0 +1,22 @@
+# FMN coalition federation node configuration.
+# Each national/allied C2 node binds mTLS identity to LDAP PIP and MIP4-IES domain.
+
+[local_node]
+id = "usa-national-c2"
+domain_id = "DOMAIN-HIGH"
+ldap_config = "fmn-ldap-pip.toml"
+pki_env = "pki.env.example"
+
+[local_node.mtls]
+require_client_auth = true
+client_ca = "fixtures/coalition-client-ca.pem"
+
+[replication.peers]
+# Allied nodes pull PEP-filtered journals from publisher sync endpoints.
+usa_publisher = "https://usa-national-c2.fmn.mil/mip4-ies/v1/sync"
+gbr_publisher = "https://gbr-allied-c2.fmn.mil/mip4-ies/v1/sync"
+
+[replication.policy]
+# Sync responses are filtered by the publisher PEP for the mTLS client identity.
+pep_filtered_sync = true
+journal_persistence = "exchange.json"
