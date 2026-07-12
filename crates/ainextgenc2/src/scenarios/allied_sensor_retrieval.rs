@@ -566,18 +566,24 @@ mod tests {
             .count();
         assert_eq!(write_permits, 7);
 
-        let read_denies: Vec<_> = output
+        let read_permits = output
             .policy_decisions
             .iter()
-            .filter(|d| d.phase == "gbr-allied-c2-read" && d.effect == "deny")
-            .collect();
-        assert_eq!(read_denies.len(), 2);
-        assert!(read_denies
-            .iter()
-            .all(|d| d.reason.contains("nationality GBR not in resource releasability")));
-        assert!(read_denies
-            .iter()
-            .any(|d| d.resource_name.as_deref() == Some("USA-EYES-ONLY")));
+            .filter(|d| d.phase == "gbr-allied-c2-read" && d.effect == "permit")
+            .count();
+        assert_eq!(
+            read_permits, 5,
+            "PEP-filtered sync replicates coalition-releasable objects only"
+        );
+        assert!(
+            output
+                .policy_decisions
+                .iter()
+                .filter(|d| d.phase == "gbr-allied-c2-read" && d.effect == "deny")
+                .count()
+                == 0,
+            "national-only objects are withheld at sync, not denied on read"
+        );
     }
 
     #[tokio::test]
