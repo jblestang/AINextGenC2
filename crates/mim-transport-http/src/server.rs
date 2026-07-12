@@ -4,6 +4,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use mim_crypto::NmbTrustStore;
+use mim_policy::{SubjectAttributes, SubjectResolver};
+use mim_transport::FederationConfig;
 use mim_transport::secured::SecuredExchangeBroker;
 use rustls::pki_types::CertificateDer;
 use rustls::{RootCertStore, ServerConfig};
@@ -12,6 +14,10 @@ use tokio_rustls::TlsAcceptor;
 use tokio::sync::Mutex;
 use tower::Service;
 
+use crate::identity::{
+    client_cn_from_cert_der, client_subject_dn_from_cert_der, TlsClientIdentity,
+    HEADER_MIM_CLIENT_CERT_SHA256,
+};
 use crate::routes::{self, AppState};
 use crate::tls::TlsIdentity;
 
@@ -19,6 +25,9 @@ use crate::tls::TlsIdentity;
 #[derive(Clone, Debug)]
 pub struct HttpExchangeConfig {
     pub trust_store: NmbTrustStore,
+    pub subject_resolver: SubjectResolver,
+    pub require_client_identity: bool,
+    pub fallback_subject: Option<SubjectAttributes>,
 }
 
 impl HttpExchangeConfig {
@@ -26,13 +35,35 @@ impl HttpExchangeConfig {
         let kp = mim_crypto::conformance_keypair()?;
         Ok(Self {
             trust_store: NmbTrustStore::from_verifying_keys([kp.verifying_key().clone()]),
+            subject_resolver: SubjectResolver::conformance()
+                .map_err(|e| mim_crypto::CryptoError::Operation(e.to_string()))?,
+            require_client_identity: false,
+            fallback_subject: Some(SubjectAttributes::new(
+                "analyst",
+                mim_labeling::ClassificationLevel::Secret,
+            )),
         })
     }
 
     /// Production trust store from `MIM_NMB_TRUST`, or conformance when `MIM_CONFORMANCE_KEYS=1`.
     pub fn from_env() -> mim_crypto::CryptoResult<Self> {
+        let federation = FederationConfig::from_env().ok();
+        let subject_resolver = SubjectResolver::from_env()
+            .or_else(|_| SubjectResolver::conformance())
+            .map_err(|e| mim_crypto::CryptoError::Operation(e.to_string()))?;
+        let require_client_identity = federation
+            .as_ref()
+            .map(FederationConfig::require_mtls)
+            .unwrap_or_else(|| {
+                std::env::var("MIM_REQUIRE_CLIENT_IDENTITY")
+                    .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                    .unwrap_or(false)
+            });
         Ok(Self {
             trust_store: mim_crypto::load_trust_store()?,
+            subject_resolver,
+            require_client_identity,
+            fallback_subject: None,
         })
     }
 }
@@ -111,6 +142,9 @@ impl HttpExchangeServer {
         let state = AppState {
             broker: Arc::new(Mutex::new(broker)),
             trust_store: self.config.trust_store.clone(),
+            subject_resolver: Arc::new(self.config.subject_resolver.clone()),
+            require_client_identity: self.config.require_client_identity,
+            fallback_subject: self.config.fallback_subject.clone(),
         };
         Ok((acceptor, routes::exchange_router(state)))
     }
@@ -130,9 +164,37 @@ async fn accept_loop(
                 Ok(tls_stream) => tls_stream,
                 Err(_) => return,
             };
+            let peer_identity = extract_peer_identity(&stream);
             let io = hyper_util::rt::TokioIo::new(stream);
-            let hyper_service =
-                hyper::service::service_fn(move |request| app.clone().call(request));
+            let hyper_service = hyper::service::service_fn(move |mut request| {
+                let mut app = app.clone();
+                let peer_identity = peer_identity.clone();
+                async move {
+                    if let Some(identity) = &peer_identity {
+                        if let Ok(value) = axum::http::HeaderValue::from_str(&identity.cn) {
+                            request
+                                .headers_mut()
+                                .insert("X-MIM-Tls-Client-CN", value);
+                        }
+                        if let Some(fingerprint) = &identity.cert_sha256 {
+                            if let Ok(value) = axum::http::HeaderValue::from_str(fingerprint) {
+                                request.headers_mut().insert(
+                                    HEADER_MIM_CLIENT_CERT_SHA256,
+                                    value,
+                                );
+                            }
+                        }
+                        if let Some(dn) = &identity.subject_dn {
+                            if let Ok(value) = axum::http::HeaderValue::from_str(dn) {
+                                request
+                                    .headers_mut()
+                                    .insert("X-MIM-Tls-Client-DN", value);
+                            }
+                        }
+                    }
+                    app.call(request).await
+                }
+            });
             if hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
                 .serve_connection(io, hyper_service)
                 .await
@@ -142,6 +204,21 @@ async fn accept_loop(
             }
         });
     }
+}
+
+fn extract_peer_identity<S>(tls: &tokio_rustls::server::TlsStream<S>) -> Option<TlsClientIdentity> {
+    let (_io, conn) = tls.get_ref();
+    let cert = conn.peer_certificates()?.first()?;
+    let cert_der = cert.as_ref();
+    let cert_sha256 = mim_crypto::sha256_hex(cert_der);
+    let cn = client_cn_from_cert_der(cert_der)
+        .unwrap_or_else(|| format!("cert-{cert_sha256}"));
+    let subject_dn = client_subject_dn_from_cert_der(cert_der);
+    Some(TlsClientIdentity {
+        cn,
+        cert_sha256: Some(cert_sha256),
+        subject_dn,
+    })
 }
 
 fn build_server_config(
@@ -239,8 +316,14 @@ mod tests {
                 .expect("broker"),
             )),
             trust_store: NmbTrustStore::from_verifying_keys([keys.verifying_key().clone()]),
+            subject_resolver: Arc::new(SubjectResolver::conformance().expect("resolver")),
+            require_client_identity: false,
+            fallback_subject: Some(SubjectAttributes::new(
+                "analyst",
+                ClassificationLevel::Secret,
+            )),
         };
-        routes::handle_put(&state, &headers, envelope)
+        routes::handle_put(&state, &headers, None, envelope)
             .await
             .expect("put");
     }

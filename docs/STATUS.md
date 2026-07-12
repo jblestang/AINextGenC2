@@ -1,6 +1,6 @@
 # AINextGenC2 — Precise Status
 
-Last verified: **2026-07-11** (workspace on `main`, commit after OWL attribute import merge).
+Last verified: **2026-07-12** (branch `cursor/real-federation-http-d2ec`, HTTPS federation + LDAP PIP stub).
 
 Run the commands in [Verification](#verification) to reproduce these numbers locally.
 
@@ -83,8 +83,8 @@ Import pipeline:
 | STANAG 4774/4778 | Ready | Partial | Full national extensions; LDAP/SAML clearance |
 | ZTDF (ACP-240 Supp. 3–4) | Ready (encoding) | Partial | No KAS protocol; no ABAC at decrypt |
 | DCS cross-domain guard | Ready (config) | Partial | Conformance keys in demos; no accredited guard |
-| MIP4-IES transport | Ready (100% dimensional) | Partial | No live HTTPS E2E in CI; JSON-LD wire profile |
-| Policy plane (PIP/PDP/PEP) | Ready (subset) | Partial | No full CMBAC; LDAP/SAML PIP; static PIP |
+| MIP4-IES transport | Ready (100% dimensional + HTTPS E2E) | Partial | JSON-LD wire profile; push/webhook replication |
+| Policy plane (PIP/PDP/PEP) | Ready (subset + LDAP PIP stub) | Partial | No full CMBAC; live LDAP/SAML IdP; static PIP fallback |
 | Crypto / PKI | FIPS 140-3 default + production env PKI | Partial | RSA outside FIPS module; HSM not integrated |
 | Audit | Durable envelope JSONL + SIEM export | Partial | No WORM media; HTTP SIEM is best-effort |
 | Scenarios | 5 demos | Demo only | Synthetic data; no live C2 integration |
@@ -98,7 +98,7 @@ Import pipeline:
 | `air_defense_radar` | `cargo run --example air_defense_radar` | Sensor → MIM tracks/targets |
 | `dcs_cross_domain` | `cargo run --example dcs_cross_domain` | STANAG label + NMBS + ZTDF + guard downgrade |
 | `mip4_ies_exchange` | `cargo run --example mip4_ies_exchange` | PEP-gated PutObject / GetByFilter |
-| `allied_sensor_retrieval` | library API | USA→GBR coalition sync; national-only tracks hidden |
+| `allied_sensor_retrieval` | `cargo run --example allied_c2_sensor_retrieval` | USA→GBR coalition sync; set `MIM_FEDERATION_HTTP=1` for HTTPS federation |
 | `transport_exchange` | library API | Secured broker publish + filter |
 
 **Not yet implemented:** SAR mission compartment, national/coalition dual-broker separation, LOC tactical release scenarios.
@@ -119,21 +119,21 @@ Import pipeline:
 | `mission_id` in PDP evaluation | **Implemented** (domain `mission_compartments`) |
 | Durable audit envelopes (`FileAuditSink`) | **Implemented** |
 | SIEM JSON export / HTTP forward | **Implemented** (`forward_siem_to_file`, `forward_log_http`) |
-| Structured NATO clearance (XML/LDAP/SAML) | **Not implemented** |
+| LDAP PIP stub (fixture-driven clearance lookup) | **Implemented** (`mim-policy/ldap_pip`, `config/fmn-ldap-pip.toml`) |
+| Structured NATO clearance (XML/LDAP/SAML) | **Partial** (fixture LDAP; no live IdP) |
 | Full CMBAC permissive/restrictive category matrix | **Not implemented** |
-| LDAP/SAML PIP integration | **Not implemented** |
+| SAML PIP integration | **Not implemented** |
 
 ---
 
 ## Remaining priorities (operational path)
 
 1. National/coalition dual-broker compartment scenario (SAR, LOC)
-2. Production PKI defaults on HTTP server and DCS (feature-flag conformance keys)
-3. Live HTTPS E2E in CI
-4. MIP4-IES JSON-LD wire profile + NATO accreditation vectors
-5. WORM audit media / accredited SIEM connectors
-6. Signed SPIF distribution (NMRR-equivalent workflow)
-7. KAS client + ABAC at ZTDF decrypt (ACP-240 full)
+2. MIP4-IES JSON-LD wire profile + NATO accreditation vectors
+3. Live LDAP/SAML IdP integration (beyond fixture PIP)
+4. WORM audit media / accredited SIEM connectors
+5. Signed SPIF distribution (NMRR-equivalent workflow)
+6. KAS client + ABAC at ZTDF decrypt (ACP-240 full)
 
 See [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md) for detail. MIP4-IES transport detail: [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md).
 
@@ -143,6 +143,9 @@ See [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md) f
 
 ```bash
 cargo test --workspace
+cargo test -p mim-transport-http --test https_e2e
+cargo test -p mim-transport-http --test federation_e2e
+MIM_FEDERATION_HTTP=1 cargo run --example allied_c2_sensor_retrieval
 cargo run -p ainextgenc2
 cargo run -p ainextgenc2 -- --labeling
 cargo run -p ainextgenc2 -- --mip4

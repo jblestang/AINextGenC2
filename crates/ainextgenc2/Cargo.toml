@@ -31,6 +31,8 @@ mim-stanag4774 = { workspace = true }
 mim-stanag4778 = { workspace = true }
 mim-crypto = { workspace = true }
 mim-audit = { workspace = true }
+mim-transport-http = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

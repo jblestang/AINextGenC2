@@ -18,9 +18,11 @@
 pub mod broker;
 pub mod envelope;
 pub mod error;
+pub mod federation;
 pub mod filter;
 pub mod message;
 pub mod persistence;
+pub mod remote;
 pub mod replication;
 pub mod rest;
 pub mod secured;
@@ -38,6 +40,8 @@ pub use message::{
     GetByFilterResponse, GetByOidRequest, GetByOidResponse, IesOperation, JournalEntry,
     PutObjectRequest, PutObjectResponse, SyncResponse,
 };
+pub use federation::FederationConfig;
+pub use remote::FederationPublisher;
 pub use persistence::FileExchangeStore;
 pub use replication::{ReplicationAgent, ReplicationApplyReport};
 pub use rest::{paths, encode_oid_for_path, filter_from_query, HttpMethod, RestRoute};

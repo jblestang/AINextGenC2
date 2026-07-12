@@ -136,7 +136,7 @@ Source chain: **mimworld.org** → DISO mirror → bundled `models/ontology/JC3I
 | `air_defense_radar` | Sensor → MIM `TrackIdentifier` + `Target` |
 | `dcs_cross_domain` | STANAG 4774/4778 + ZTDF + DCS guard downgrade |
 | `mip4_ies_exchange` | PEP-gated MIP4-IES broker |
-| `allied_sensor_retrieval` | Coalition replication; national-only tracks hidden from allies |
+| `allied_sensor_retrieval` | Coalition replication (in-process or `MIM_FEDERATION_HTTP=1` HTTPS); national-only tracks hidden from allies |
 | `transport_exchange` | Secured publish + filter |
 
 All scenarios use synthetic data — not connected to live C2 systems. Mission-compartment (SAR, LOC, national/coalition separation) scenarios are planned; see [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md).

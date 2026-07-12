@@ -23,10 +23,13 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 tokio-rustls = "0.25"
 rustls = { version = "0.22", default-features = false, features = ["ring", "logging", "tls12"] }
 rustls-pemfile = "2"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 tower = { version = "0.4", features = ["util"] }
+x509-parser = "0.16"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+toml = "0.8"
 
 [dev-dependencies]
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }

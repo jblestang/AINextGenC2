@@ -53,6 +53,8 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | DCS audit not wired in config/scenario | `[audit]` in `config/dcs-coalition.toml`; DCS scenario exports SIEM JSON |
 | Conformance PKI always default | `mim-crypto/runtime_pki.rs` — production PEM via env; `MIM_CONFORMANCE_KEYS=1` for lab |
 | No live HTTPS E2E in CI | `mim-transport-http/tests/https_e2e.rs` + `.github/workflows/ci.yml` |
+| In-memory-only coalition federation | `HttpFederationClient` + `federation_e2e` + allied scenario `MIM_FEDERATION_HTTP=1` |
+| Caller-supplied subject only (no PIP) | Fixture LDAP PIP (`mim-policy/ldap_pip`, `SubjectResolver`, `config/fmn-ldap-pip.toml`) |
 
 ---
 
@@ -176,14 +178,15 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 ### 7.1 Persistent exchange store (implemented)
 
 - **Implemented:** `FileExchangeStore` snapshots (`exchange.json`) + append-only `exchange.journal.jsonl`
-- **Limitation:** No distributed consensus or multi-node replication protocol beyond journal poll
+- **Implemented:** `HttpFederationClient` pulls PEP-filtered `/mip4-ies/v1/sync` and fetches objects over HTTPS (`replicate_into`)
+- **Limitation:** No distributed consensus; journal poll + HTTP fetch only (no push/webhook replication)
 
 ### 7.2 HTTP server — REST CRUD + wire formats
 
 - **Implemented:** Full CRUD, XPath filter subset, pagination, `MIM-Version` header, `application/mim+json` / `application/mim+xml`, replication sync
 - **Conformance:** 140/140 MIP4 checks pass (`ainextgenc2 --mip4`)
 - **See:** [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md)
-- **Remaining:** Official MIP4 JSON-LD wire profile, full XPath, NATO-provided accreditation vectors, live HTTPS E2E in CI
+- **Remaining:** Official MIP4 JSON-LD wire profile, full XPath, NATO-provided accreditation vectors
 
 ### 7.3 Default trust store is conformance PKI
 
@@ -192,7 +195,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ### 7.4 Raw `ReplicationAgent` copies full journal
 
-- **Limitation:** Unfiltered replication from raw `ExchangeBroker` copies all journal entries; use `SecuredExchangeBroker.sync_since()` for PEP-filtered sync.
+- **Limitation:** Unfiltered replication from raw `ExchangeBroker` copies all journal entries; use `SecuredExchangeBroker.sync_since_as()` or `HttpFederationClient::replicate_into()` for PEP-filtered sync.
 
 ---
 
@@ -236,7 +239,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | `air_defense_radar` | Synthetic radar tracks |
 | `dcs_cross_domain` | High→low downgrade + ZTDF |
 | `mip4_ies_exchange` | PEP-gated broker |
-| `allied_sensor_retrieval` | Coalition sync; `USA-EYES-ONLY` hidden from GBR |
+| `allied_sensor_retrieval` | Coalition sync (in-process or `MIM_FEDERATION_HTTP=1` HTTPS); `USA-EYES-ONLY` hidden from GBR |
 | `transport_exchange` | Secured publish + filter |
 
 - **Limitation:** Not connected to live C2 systems; no SAR/LOC/national-separation scenarios.
@@ -250,7 +253,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | 1 | National/coalition dual-broker compartment scenario (SAR, LOC) | Coalition exercise | Medium | **Deferred** |
 | 2 | Production PKI defaults (`MIM_NMB_TRUST`, feature-flag conformance) | Coalition exercise | Low–medium | **Done** |
 | 3 | Live HTTPS E2E in CI | Coalition exercise / MIP4 pilot | Medium | **Done** |
-| 4 | LDAP/SAML PIP stub (structured NATO clearance) | Coalition exercise | Medium | Open |
+| 4 | LDAP/SAML PIP stub (structured NATO clearance) | Coalition exercise | Medium | **Partial** (fixture LDAP PIP; no live IdP) |
 | 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | Open |
 | 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | Open |
 | 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | Open |
