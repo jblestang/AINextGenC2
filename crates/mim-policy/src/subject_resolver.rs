@@ -56,7 +56,11 @@ impl SubjectResolver {
     pub fn from_env() -> PolicyResult<Self> {
         let path = std::env::var("MIM_LDAP_PIP_CONFIG")
             .unwrap_or_else(|_| "config/fmn-ldap-pip.toml".into());
-        let ldap = LdapSubjectDirectory::load_path(&path)?;
+        Self::from_config_path(&path)
+    }
+
+    pub fn from_config_path(path: impl AsRef<std::path::Path>) -> PolicyResult<Self> {
+        let ldap = LdapSubjectDirectory::load_path(path)?;
         Ok(Self::new(ldap))
     }
 

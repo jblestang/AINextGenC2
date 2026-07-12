@@ -23,8 +23,8 @@ use mim_transport::wire::{
     MIM_VERSION,
 };
 use mim_transport::{
-    encode_oid_for_path, filter_from_query, notify_webhooks, ReplicationNotifyPayload,
-    TransportError, TransportResult,
+    encode_oid_for_path, filter_from_query, notify_webhooks_with_options,
+    ReplicationNotifyPayload, TransportError, TransportResult,
 };
 use mim_crypto::PkiMode;
 use serde::Deserialize;
@@ -43,6 +43,8 @@ pub struct AppState {
     pub fallback_subject: Option<SubjectAttributes>,
     /// Publisher-side webhook targets notified after journal append.
     pub webhook_targets: Arc<Vec<String>>,
+    pub notify_options: mim_transport::ReplicationNotifyOptions,
+    pub notify_fail_closed: bool,
     /// Consumer-side publisher sync URL used by the replication notify handler.
     pub federation_pull_url: Option<String>,
     pub federation_client_cn: Option<String>,
@@ -104,7 +106,29 @@ async fn put_object(
                 let broker = state.broker.lock().await;
                 broker.latest_sequence()
             };
-            notify_webhooks(state.webhook_targets.as_ref(), latest);
+            let report = notify_webhooks_with_options(
+                state.webhook_targets.as_ref(),
+                latest,
+                &state.notify_options,
+            );
+            if state.notify_fail_closed && !report.all_delivered() {
+                let failures: Vec<_> = report
+                    .results
+                    .iter()
+                    .filter(|result| !result.delivered)
+                    .map(|result| {
+                        format!(
+                            "{}: {}",
+                            result.url,
+                            result.error.as_deref().unwrap_or("delivery failed")
+                        )
+                    })
+                    .collect();
+                return map_error(TransportError::Validation(format!(
+                    "replication webhook notify failed: {}",
+                    failures.join("; ")
+                )));
+            }
             negotiated_response(
                 &headers,
                 WirePayloadFormat::Json,
@@ -596,6 +620,8 @@ mod tests {
                 ClassificationLevel::Secret,
             )),
             webhook_targets: Arc::new(Vec::new()),
+            notify_options: mim_transport::ReplicationNotifyOptions::default(),
+            notify_fail_closed: false,
             federation_pull_url: None,
             federation_client_cn: None,
             federation_pki_mode: PkiMode::Lab,

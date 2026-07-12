@@ -8,6 +8,7 @@ use mim_crypto::PkiMode;
 use mim_policy::{SubjectAttributes, SubjectResolver};
 use mim_transport::FederationConfig;
 use mim_transport::secured::SecuredExchangeBroker;
+use mim_transport::ReplicationNotifyOptions;
 use rustls::pki_types::CertificateDer;
 use rustls::{RootCertStore, ServerConfig};
 use tokio::net::TcpListener;
@@ -56,16 +57,46 @@ impl HttpExchangeConfig {
         mode: PkiMode,
         ldap_config_path: Option<&str>,
     ) -> mim_crypto::CryptoResult<Self> {
-        if let Some(path) = ldap_config_path {
-            std::env::set_var("MIM_LDAP_PIP_CONFIG", path);
+        let subject_resolver = if let Some(path) = ldap_config_path {
+            SubjectResolver::from_config_path(path)
+        } else {
+            SubjectResolver::from_env().or_else(|_| SubjectResolver::conformance())
         }
-        let subject_resolver = SubjectResolver::from_env()
-            .or_else(|_| SubjectResolver::conformance())
-            .map_err(|e| mim_crypto::CryptoError::Operation(e.to_string()))?;
+        .map_err(|e| mim_crypto::CryptoError::Operation(e.to_string()))?;
         Ok(Self {
             trust_store: mim_crypto::load_trust_store_for(mode)?,
             subject_resolver,
             require_client_identity: true,
+            fallback_subject: None,
+        })
+    }
+
+    /// Coalition exercise config from federation file (no `std::env` mutation).
+    pub fn from_federation(
+        mode: PkiMode,
+        federation: &FederationConfig,
+    ) -> mim_crypto::CryptoResult<Self> {
+        let subject_resolver = SubjectResolver::from_config_path(federation.ldap_config_path())
+            .map_err(|e| mim_crypto::CryptoError::Operation(e.to_string()))?;
+        let trust_store = match mode {
+            PkiMode::Lab => mim_crypto::load_trust_store_for(PkiMode::Lab)?,
+            PkiMode::Production => {
+                if let Some(pki) = federation
+                    .resolved_pki_config()
+                    .map_err(|e| mim_crypto::CryptoError::Operation(e.to_string()))?
+                {
+                    let paths: Vec<&std::path::Path> =
+                        pki.nmb_trust.iter().map(std::path::Path::new).collect();
+                    mim_crypto::NmbTrustStore::from_spki_pem_files(paths)?
+                } else {
+                    mim_crypto::load_trust_store_for(PkiMode::Production)?
+                }
+            }
+        };
+        Ok(Self {
+            trust_store,
+            subject_resolver,
+            require_client_identity: federation.require_mtls(),
             fallback_subject: None,
         })
     }
@@ -115,6 +146,8 @@ pub struct HttpExchangeServer {
     client_ca: Option<Vec<CertificateDer<'static>>>,
     config: HttpExchangeConfig,
     webhook_targets: Vec<String>,
+    notify_options: ReplicationNotifyOptions,
+    notify_fail_closed: bool,
     federation_pull_url: Option<String>,
     federation_client_cn: Option<String>,
     federation_pki_mode: PkiMode,
@@ -128,6 +161,8 @@ impl HttpExchangeServer {
             client_ca: None,
             config: HttpExchangeConfig::default(),
             webhook_targets: Vec::new(),
+            notify_options: ReplicationNotifyOptions::default(),
+            notify_fail_closed: false,
             federation_pull_url: None,
             federation_client_cn: None,
             federation_pki_mode: PkiMode::Lab,
@@ -142,22 +177,25 @@ impl HttpExchangeServer {
     ) -> Result<Self, String> {
         self.federation_pki_mode = mode;
         if mode == PkiMode::Production {
-            federation.apply_pki_env().map_err(|e| e.to_string())?;
             if let Some(ca_path) = federation.client_ca_path() {
                 let pem = std::fs::read(ca_path)
                     .map_err(|e| format!("read client CA {}: {e}", ca_path))?;
                 self = self.with_client_ca(&pem)?;
             }
         }
+        self.notify_options = federation.notify_options();
+        self.notify_fail_closed = federation.notify_fail_closed();
         if let Some(url) = federation.peer_notify_url("gbr") {
             self.webhook_targets = vec![url.to_owned()];
         }
         Ok(self)
     }
 
-    /// Lab federation wiring: webhook targets only (no production PKI env or mTLS CA).
+    /// Lab federation wiring: webhook targets and notify policy (no production mTLS CA).
     pub fn with_federation_lab(mut self, federation: &FederationConfig) -> Self {
         self.federation_pki_mode = PkiMode::Lab;
+        self.notify_options = federation.notify_options();
+        self.notify_fail_closed = federation.notify_fail_closed();
         if let Some(url) = federation.peer_notify_url("gbr") {
             self.webhook_targets = vec![url.to_owned()];
         }
@@ -233,6 +271,8 @@ impl HttpExchangeServer {
             require_client_identity: self.config.require_client_identity,
             fallback_subject: self.config.fallback_subject.clone(),
             webhook_targets: Arc::new(self.webhook_targets.clone()),
+            notify_options: self.notify_options.clone(),
+            notify_fail_closed: self.notify_fail_closed,
             federation_pull_url: self.federation_pull_url.clone(),
             federation_client_cn: self.federation_client_cn.clone(),
             federation_pki_mode: self.federation_pki_mode,
@@ -414,6 +454,8 @@ mod tests {
                 ClassificationLevel::Secret,
             )),
             webhook_targets: Arc::new(Vec::new()),
+            notify_options: mim_transport::ReplicationNotifyOptions::default(),
+            notify_fail_closed: false,
             federation_pull_url: None,
             federation_client_cn: None,
             federation_pki_mode: PkiMode::Lab,
