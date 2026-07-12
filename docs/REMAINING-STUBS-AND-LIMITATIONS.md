@@ -86,7 +86,9 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | Conformance PKI always default | `mim-crypto/runtime_pki.rs` — production PEM via env; `MIM_CONFORMANCE_KEYS=1` for lab |
 | No live HTTPS E2E in CI | `mim-transport-http/tests/https_e2e.rs` + `.github/workflows/ci.yml` |
 | In-memory-only coalition federation | `HttpFederationClient` + `federation_e2e` + allied scenario `MIM_FEDERATION_HTTP=1` |
-| Caller-supplied subject only (no PIP) | Fixture LDAP PIP (`mim-policy/ldap_pip`, `SubjectResolver`, `config/fmn-ldap-pip.toml`) |
+| Caller-supplied subject only (no PIP) | Fixture LDAP PIP + live LDAP + SAML bearer (`SubjectDirectory`, `saml_pip`) |
+| No JSON-LD wire profile in CI | `serialize` JSON-LD tests + `get_by_oid_returns_jsonld` + `https_get_returns_jsonld` |
+| KAS unwrap without ABAC gate | `ZtdfPackage::decrypt_with_policy` + `KasClient` trait |
 | NMBS and KAS keys collapsed in demos | Separate `conformance_key_ring()` / `conformance_kas_keypair()` hierarchies |
 
 ---
@@ -287,9 +289,9 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | 1 | National/coalition dual-broker compartment scenario (SAR, LOC) | Coalition exercise | Medium | **Deferred** |
 | 2 | Production PKI defaults (`MIM_NMB_TRUST`, feature-flag conformance) | Coalition exercise | Low–medium | **Done** |
 | 3 | Live HTTPS E2E in CI | Coalition exercise / MIP4 pilot | Medium | **Done** |
-| 4 | LDAP/SAML PIP stub (structured NATO clearance) | Coalition exercise | Medium | **Partial** (fixture LDAP PIP; no live IdP) |
-| 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | Open |
-| 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | Open |
+| 4 | LDAP/SAML PIP (structured NATO clearance) | Coalition exercise | Medium | **Partial** (fixture + live LDAP + SAML bearer) |
+| 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | **Partial** (wire + CI E2E; NATO vectors open) |
+| 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | **Partial** (local + HTTP KAS stub; ABAC gate) |
 | 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | Open |
 | 8 | Signed SPIF distribution (NMRR-equivalent workflow) | Classified accredited | High | Open |
 | 9 | Authoritative MIM 5.1 OWL (when mimworld republishes) | Manifest accuracy | External | Open |

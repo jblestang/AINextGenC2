@@ -5,11 +5,13 @@ use mim_crypto::{
     selected_provider, sha256_base64, AesGcmCiphertext, ContentEncryptionKey, SigningKey,
     VerifyingKey,
 };
-use mim_labeling::{ConfidentialityLabel, LabelResult};
+use mim_labeling::{ConfidentialityLabel, LabelResult, SecurityDomain};
+use mim_policy::{AccessOperation, PolicyEnforcementPoint, SubjectAttributes};
 use mim_stanag4778::{AssertionBinding, BindingDataObject, BindingSignature, MetadataBinding};
 use zip::write::SimpleFileOptions;
 use zip::{ZipArchive, ZipWriter};
 
+use crate::kas::KasClient;
 use crate::manifest::{default_policy_b64, ZtdfManifest};
 
 const PAYLOAD_ENTRY: &str = "0.payload";
@@ -65,18 +67,52 @@ impl ZtdfPackage {
     }
 
     pub fn decrypt(&self, kas_private_key: &SigningKey) -> LabelResult<Vec<u8>> {
-        let wrapped = STANDARD
-            .decode(&self.manifest.encryption_information.key_wrap.wrapped_key)
-            .map_err(|e| mim_labeling::LabelError::Parse(e.to_string()))?;
-        let provider = selected_provider();
-        let cek = provider
-            .unwrap_key_rsa_oaep_sha256(kas_private_key, &wrapped)
-            .map_err(|e| mim_labeling::LabelError::Binding(e.to_string()))?;
+        let client = crate::kas::LocalKasClient::new(kas_private_key.clone());
+        self.decrypt_with_kas(&client)
+    }
+
+    /// Decrypt payload after PEP ABAC gate and KAS content-key unwrap.
+    pub fn decrypt_with_policy(
+        &self,
+        subject: &SubjectAttributes,
+        pep: &PolicyEnforcementPoint,
+        domain: &SecurityDomain,
+        kas: &dyn KasClient,
+    ) -> LabelResult<Vec<u8>> {
+        let label = self.label_from_manifest()?;
+        pep.enforce_access(
+            subject.clone(),
+            &label,
+            AccessOperation::Read,
+            domain,
+        )
+        .map_err(|e| mim_labeling::LabelError::Validation(e.to_string()))?;
+        self.decrypt_with_kas(kas)
+    }
+
+    /// Unwrap CEK via KAS and decrypt payload (no PEP gate).
+    pub fn decrypt_with_kas(&self, kas: &dyn KasClient) -> LabelResult<Vec<u8>> {
+        let cek = kas.unwrap_content_key(&self.manifest)?;
         let ciphertext = AesGcmCiphertext::from_bytes(&self.encrypted_payload)
             .map_err(|e| mim_labeling::LabelError::Binding(e.to_string()))?;
-        provider
+        selected_provider()
             .decrypt_aes256_gcm(&cek, &ciphertext, b"ztdf/0.payload")
             .map_err(|e| mim_labeling::LabelError::Binding(e.to_string()))
+    }
+
+    fn label_from_manifest(&self) -> LabelResult<ConfidentialityLabel> {
+        self.manifest
+            .nato_label_assertion()
+            .and_then(|a| {
+                serde_json::to_string(&a.statement.value)
+                    .ok()
+                    .and_then(|json| {
+                        mim_stanag4774::Stanag4774Codec::new()
+                            .deserialize(&json, mim_stanag4774::Stanag4774Format::JsonStructured)
+                            .ok()
+                    })
+            })
+            .ok_or_else(|| mim_labeling::LabelError::Validation("missing label assertion".into()))
     }
 
     pub fn verify(&self, verifying_key: &VerifyingKey, kas_private_key: &SigningKey) -> LabelResult<()> {
@@ -259,5 +295,45 @@ mod tests {
         .expect("create");
         assert!(package.decrypt(ring.nmb_signing()).is_err());
         assert!(package.decrypt(ring.kas_signing()).is_ok());
+    }
+
+    #[test]
+    fn decrypt_with_policy_denies_insufficient_clearance() {
+        use mim_labeling::DomainId;
+        use mim_policy::{
+            PolicyDecisionPoint, PolicyEnforcementPoint, PolicyInformationPoint, PolicyStore,
+            SubjectAttributes,
+        };
+
+        let ring = conformance_key_ring().expect("key ring");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let payload = b"classified-payload".to_vec();
+        let package = ZtdfPackage::create(
+            &label,
+            payload,
+            ring.nmb_signing(),
+            ring.nmb_verifying(),
+            ring.kas_verifying(),
+        )
+        .expect("create");
+        let store = PolicyStore::preset_coalition();
+        let pep = PolicyEnforcementPoint::new(
+            PolicyInformationPoint::new(),
+            PolicyDecisionPoint::new(store.clone()),
+        );
+        let domain = store
+            .domain(&DomainId::new("DOMAIN-NATO"))
+            .expect("domain")
+            .clone();
+        let subject = SubjectAttributes::new("low-analyst", ClassificationLevel::Restricted);
+        let kas = crate::kas::LocalKasClient::new(ring.kas_signing().clone());
+        assert!(package
+            .decrypt_with_policy(&subject, &pep, &domain, &kas)
+            .is_err());
+        let cleared = SubjectAttributes::new("high-analyst", ClassificationLevel::Secret);
+        let plaintext = package
+            .decrypt_with_policy(&cleared, &pep, &domain, &kas)
+            .expect("decrypt");
+        assert_eq!(plaintext, b"classified-payload");
     }
 }

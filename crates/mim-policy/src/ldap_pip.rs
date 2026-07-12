@@ -121,6 +121,9 @@ impl LdapSubjectDirectory {
         config: &LdapPipConfig,
         base_dir: Option<&Path>,
     ) -> PolicyResult<Self> {
+        if !config.ldap.fixture_mode {
+            return Self::from_config(config.clone(), vec![]);
+        }
         let entries_path = config
             .entries_file
             .as_ref()
@@ -207,17 +210,20 @@ impl LdapSubjectDirectory {
 
     /// Resolve a directory principal (LDAP DN or uid) to subject attributes.
     pub fn resolve_principal(&self, principal: &str) -> PolicyResult<SubjectAttributes> {
-        let normalized = normalize_principal(principal);
-        let entry = self
-            .entries
-            .get(&normalized)
-            .or_else(|| self.entries.values().find(|e| e.subject_id == normalized))
-            .ok_or_else(|| {
-                PolicyError::NotFound(format!(
-                    "LDAP principal '{principal}' not found in fixture directory"
-                ))
-            })?;
-        entry.to_subject_attributes()
+        if self.config.ldap.fixture_mode {
+            let normalized = normalize_principal(principal);
+            let entry = self
+                .entries
+                .get(&normalized)
+                .or_else(|| self.entries.values().find(|e| e.subject_id == normalized))
+                .ok_or_else(|| {
+                    PolicyError::NotFound(format!(
+                        "LDAP principal '{principal}' not found in fixture directory"
+                    ))
+                })?;
+            return entry.to_subject_attributes();
+        }
+        crate::live_ldap::search_principal(&self.config, principal)
     }
 
     /// Resolve an mTLS client certificate CN to subject attributes.
@@ -254,6 +260,24 @@ impl LdapSubjectDirectory {
             return self.resolve_principal(identity);
         }
         self.resolve_cert_cn(identity)
+    }
+}
+
+impl crate::subject_directory::SubjectDirectory for LdapSubjectDirectory {
+    fn resolve_principal(&self, principal: &str) -> PolicyResult<SubjectAttributes> {
+        LdapSubjectDirectory::resolve_principal(self, principal)
+    }
+
+    fn resolve_cert_cn(&self, cn: &str) -> PolicyResult<SubjectAttributes> {
+        LdapSubjectDirectory::resolve_cert_cn(self, cn)
+    }
+
+    fn resolve_cert_fingerprint(&self, fingerprint: &str) -> PolicyResult<SubjectAttributes> {
+        LdapSubjectDirectory::resolve_cert_fingerprint(self, fingerprint)
+    }
+
+    fn resolve_cert_cn_or_principal(&self, identity: &str) -> PolicyResult<SubjectAttributes> {
+        LdapSubjectDirectory::resolve_cert_cn_or_principal(self, identity)
     }
 }
 

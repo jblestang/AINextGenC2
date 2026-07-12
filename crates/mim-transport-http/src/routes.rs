@@ -761,4 +761,63 @@ mod tests {
             Some(MEDIA_MIM_XML)
         );
     }
+
+    #[tokio::test]
+    async fn get_by_oid_returns_jsonld_when_accepted() {
+        let keys = conformance_keypair().expect("keys");
+        let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+        let instance = labeled_target("HOSTILE-JSONLD");
+        let envelope = wrap_put_object(
+            &label,
+            &PutObjectRequest { instance },
+            keys.signing_key(),
+        )
+        .expect("wrap");
+        let body = serde_json::to_string(&envelope).expect("json");
+
+        let state = test_app_state();
+        let app = exchange_router(state);
+        app.clone()
+            .oneshot(
+                Request::builder()
+                    .method("PUT")
+                    .uri("/mip4-ies/v1/objects")
+                    .header("content-type", "application/json")
+                    .header(
+                        "X-NATO-Confidentiality-Label",
+                        &envelope.originator_confidentiality_label,
+                    )
+                    .body(Body::from(body))
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+
+        let stored_oid = encode_oid_for_path("test-oid-HOSTILE-JSONLD");
+        let get_response = app
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/mip4-ies/v1/objects/{stored_oid}"))
+                    .header("accept", MEDIA_MIM_JSONLD)
+                    .body(Body::empty())
+                    .expect("request"),
+            )
+            .await
+            .expect("response");
+        assert_eq!(get_response.status(), StatusCode::OK);
+        assert_eq!(
+            get_response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some(MEDIA_MIM_JSONLD)
+        );
+        let body = axum::body::to_bytes(get_response.into_body(), usize::MAX)
+            .await
+            .expect("body");
+        let text = String::from_utf8(body.to_vec()).expect("utf8");
+        assert!(text.contains("@context"));
+        assert!(text.contains("mim:semanticId"));
+    }
 }

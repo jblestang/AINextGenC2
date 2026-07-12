@@ -28,7 +28,7 @@ impl SubjectResolver {
         &self.ldap
     }
 
-    /// Resolve from mTLS certificate CN, LDAP principal, or subject id.
+/// Resolve from mTLS certificate CN, LDAP principal, SAML bearer, or subject id.
     pub fn resolve(&self, identity: &str) -> PolicyResult<SubjectAttributes> {
         if identity.len() == 64 && identity.chars().all(|c| c.is_ascii_hexdigit()) {
             if let Ok(subject) = self.ldap.resolve_cert_fingerprint(identity) {
@@ -62,6 +62,11 @@ impl SubjectResolver {
 
     pub fn conformance() -> PolicyResult<Self> {
         Ok(Self::new(LdapSubjectDirectory::conformance()?))
+    }
+
+    /// Resolve from a SAML/OIDC bearer authorization header value.
+    pub fn resolve_saml_bearer(&self, authorization: &str) -> PolicyResult<SubjectAttributes> {
+        crate::saml_pip::resolve_saml_bearer(authorization)
     }
 }
 

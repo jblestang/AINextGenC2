@@ -1,0 +1,11 @@
+{
+  "@context": {
+    "@version": 1.1,
+    "mim": "https://www.mimworld.org/mim/5.1.0/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "MimInstance": "mim:MimInstance",
+    "semanticId": { "@id": "mim:semanticId", "@type": "xsd:string" },
+    "modelVersion": { "@id": "mim:modelVersion", "@type": "xsd:string" },
+    "data": { "@id": "mim:data", "@type": "@json" }
+  }
+}

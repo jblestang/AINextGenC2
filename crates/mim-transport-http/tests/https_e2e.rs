@@ -170,6 +170,76 @@ async fn https_put_get_delete_lifecycle() {
 }
 
 #[tokio::test]
+async fn https_get_returns_jsonld_when_accepted() {
+    std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
+
+    let keys = conformance_keypair().expect("keys");
+    let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
+    let instance = labeled_target("HOSTILE-JSONLD-HTTPS");
+    let envelope = wrap_put_object(
+        &label,
+        &PutObjectRequest { instance },
+        keys.signing_key(),
+    )
+    .expect("wrap");
+    let body = serde_json::to_string(&envelope).expect("json");
+
+    let tls = TlsIdentity::from_pem(
+        include_bytes!("../fixtures/test-server.crt"),
+        include_bytes!("../fixtures/test-server.key"),
+    )
+    .expect("tls");
+
+    let server = HttpExchangeServer::new(
+        std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+        tls,
+    )
+    .with_config(HttpExchangeConfig::conformance().expect("config"));
+
+    let (addr, server_task) = server
+        .serve_ephemeral(secured_broker())
+        .await
+        .expect("serve");
+
+    let client = reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .expect("client");
+
+    let base = format!("https://{addr}");
+    let put_response = client
+        .put(format!("{base}/mip4-ies/v1/objects"))
+        .header("content-type", "application/json")
+        .header(
+            "X-NATO-Confidentiality-Label",
+            &envelope.originator_confidentiality_label,
+        )
+        .body(body)
+        .send()
+        .await
+        .expect("put");
+    assert_eq!(put_response.status(), reqwest::StatusCode::CREATED);
+
+    let put_json: mim_transport::message::PutObjectResponse =
+        put_response.json().await.expect("put json");
+    let stored_oid = encode_oid_for_path(put_json.oid.as_str());
+
+    let get_response = client
+        .get(format!("{base}/mip4-ies/v1/objects/{stored_oid}"))
+        .header("accept", mim_transport::wire::MEDIA_MIM_JSONLD)
+        .send()
+        .await
+        .expect("get");
+    assert_eq!(get_response.status(), reqwest::StatusCode::OK);
+    let text = get_response.text().await.expect("body");
+    assert!(text.contains("@context"));
+    assert!(text.contains("mim:semanticId"));
+
+    server_task.abort();
+    let _ = server_task.await;
+}
+
+#[tokio::test]
 async fn https_config_from_env_uses_conformance_trust_store() {
     std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
     let config = HttpExchangeConfig::from_env().expect("config");

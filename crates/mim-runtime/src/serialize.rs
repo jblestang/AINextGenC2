@@ -555,6 +555,38 @@ mod tests {
         assert_eq!(restored_store.len(), 1);
     }
 
+    #[test]
+    fn jsonld_roundtrip_instance_and_store() {
+        let registry = ModelRegistry::from_manifest(minimal_manifest()).expect("registry");
+        let serializer = Serializer::new(registry);
+        let class_id =
+            SemanticId::parse("dddddddd-dddd-4ddd-8ddd-dddddddddddd").expect("id");
+        let instance = MimInstance::new("Unit", class_id)
+            .expect("instance")
+            .with_property(PropertyValue::string("nameText", "Bravo"));
+
+        let jsonld = serializer
+            .serialize_instance(&instance, SerializationFormat::JsonLd)
+            .expect("jsonld");
+        assert!(jsonld.contains(MIM_JSONLD_CONTEXT));
+        assert!(jsonld.contains("mim:semanticId"));
+        let restored = serializer
+            .deserialize_instance(&jsonld, SerializationFormat::JsonLd)
+            .expect("restore");
+        assert_eq!(restored.class_name, "Unit");
+
+        let mut store = InstanceStore::default();
+        store.insert(instance);
+        let store_jsonld = serializer
+            .serialize_store(&store, SerializationFormat::JsonLd)
+            .expect("store jsonld");
+        assert!(store_jsonld.contains("@context"));
+        let restored_store = serializer
+            .deserialize_store(&store_jsonld, SerializationFormat::JsonLd)
+            .expect("store restore");
+        assert_eq!(restored_store.len(), 1);
+    }
+
     fn minimal_manifest() -> mim_model::MimManifest {
         use mim_core::MimUri;
         use mim_model::manifest::{ModelElementKind, ModelElementSpec};

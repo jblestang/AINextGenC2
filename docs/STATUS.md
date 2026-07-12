@@ -81,10 +81,10 @@ Import pipeline:
 | Subsystem | Lab / conformance | Operational pilot | Gap |
 |-----------|-------------------|-------------------|-----|
 | STANAG 4774/4778 | Ready | Partial | Full national extensions; LDAP/SAML clearance |
-| ZTDF (ACP-240 Supp. 3–4) | Ready (encoding) | Partial | No KAS protocol; no ABAC at decrypt |
+| ZTDF (ACP-240 Supp. 3–4) | Ready (encoding + ABAC decrypt gate) | Partial | Remote KAS protocol; full OpenTDF schema |
 | DCS cross-domain guard | Ready (config + audit) | Partial | Conformance keys in demos; no accredited guard |
-| MIP4-IES transport | Ready (100% dimensional + HTTPS E2E) | Partial | JSON-LD wire profile; push/webhook replication |
-| Policy plane (PIP/PDP/PEP) | Ready (caveats + mission + LDAP PIP stub) | Partial | No full CMBAC; live LDAP/SAML IdP |
+| MIP4-IES transport | Ready (100% dimensional + HTTPS/JSON-LD E2E) | Partial | Push/webhook replication; NATO vectors |
+| Policy plane (PIP/PDP/PEP) | Ready (caveats + mission + LDAP/SAML PIP) | Partial | No full CMBAC; live LDAP server in prod |
 | Crypto / PKI | FIPS 140-3 default + separate NMB/KAS keys | Partial | RSA outside FIPS module; HSM not integrated |
 | Audit | Durable envelope JSONL + SIEM export | Partial | No WORM media; HTTP SIEM is best-effort |
 | Scenarios | 5 demos | Demo only | Synthetic data; no live C2 integration |
@@ -161,8 +161,8 @@ MIP4-IES transport detail: [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.
 | `mission_id` in PDP evaluation | **Implemented** (`SecurityDomain.mission_compartments`) |
 | Durable audit envelopes (`FileAuditSink`) | **Implemented** |
 | SIEM JSON export / HTTP forward | **Implemented** (`forward_siem_to_file`, `forward_log_http`) |
-| LDAP PIP stub (fixture-driven clearance lookup) | **Implemented** (`mim-policy/ldap_pip`, `config/fmn-ldap-pip.toml`) |
-| Structured NATO clearance (XML/LDAP/SAML) | **Partial** (fixture LDAP; no live IdP) |
+| LDAP PIP (fixture + live LDAP + SAML bearer) | **Implemented** |
+| Structured NATO clearance (XML/LDAP/SAML) | **Partial** (live LDAP/SAML lab adapters) |
 | Full CMBAC permissive/restrictive category matrix | **Not implemented** |
 | SAML PIP integration | **Not implemented** |
 

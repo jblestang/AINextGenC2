@@ -16,8 +16,10 @@
 )]
 
 pub mod assertion;
+pub mod kas;
 pub mod manifest;
 pub mod package;
 
+pub use kas::{HttpKasClient, KasClient, LocalKasClient};
 pub use manifest::{ZtdfManifest, ZtdfSpecVersion};
 pub use package::ZtdfPackage;

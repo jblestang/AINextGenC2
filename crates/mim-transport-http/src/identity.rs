@@ -43,13 +43,24 @@ pub fn client_subject_dn_from_cert_der(cert_der: &[u8]) -> Option<String> {
     Some(cert.subject().to_string())
 }
 
-/// Resolve the request subject from mTLS identity headers and the LDAP directory.
+/// HTTP header carrying a SAML/OIDC bearer token (lab profile).
+pub const HEADER_AUTHORIZATION: &str = "Authorization";
+
+/// Resolve the request subject from SAML bearer, mTLS identity headers, or LDAP directory.
 pub fn resolve_request_subject(
     resolver: &SubjectResolver,
     headers: &HeaderMap,
     tls_identity: Option<&TlsClientIdentity>,
     require_identity: bool,
 ) -> Result<SubjectAttributes, PolicyError> {
+    if let Some(authorization) = headers
+        .get(HEADER_AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+    {
+        if authorization.starts_with("Bearer ") || authorization.starts_with("bearer ") {
+            return resolver.resolve_saml_bearer(authorization);
+        }
+    }
     if let Some(principal) = headers
         .get(HEADER_MIM_CLIENT_PRINCIPAL)
         .and_then(|value| value.to_str().ok())
