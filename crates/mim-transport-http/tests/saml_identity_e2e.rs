@@ -114,8 +114,6 @@ fn gbr_saml_bearer() -> String {
 
 #[tokio::test]
 async fn saml_bearer_identity_pep_filtered_sync() {
-    std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
-
     let registry = test_registry();
     let publisher = publisher_broker(&registry);
 

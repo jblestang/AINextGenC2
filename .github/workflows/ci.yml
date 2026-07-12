@@ -8,8 +8,6 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    env:
-      MIM_CONFORMANCE_KEYS: "1"
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@master

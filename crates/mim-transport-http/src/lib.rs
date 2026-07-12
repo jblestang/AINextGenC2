@@ -9,3 +9,5 @@ pub use identity::{TlsClientIdentity, HEADER_MIM_CLIENT_CN, HEADER_MIM_CLIENT_PR
 pub use routes::{exchange_router, AppState};
 pub use server::{HttpExchangeConfig, HttpExchangeServer};
 pub use tls::{TlsConfig, TlsIdentity};
+
+pub use mim_crypto::PkiMode;

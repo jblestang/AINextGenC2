@@ -102,8 +102,6 @@ fn federation_server_config() -> HttpExchangeConfig {
 
 #[tokio::test]
 async fn http_federation_pep_filtered_replication() {
-    std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
-
     let registry = test_registry();
     let publisher = publisher_broker(&registry);
 
@@ -125,7 +123,7 @@ async fn http_federation_pep_filtered_replication() {
         .expect("serve");
 
     let sync_url = format!("https://{addr}/mip4-ies/v1/sync");
-    let client = HttpFederationClient::new(&sync_url)
+    let client = HttpFederationClient::new_lab(&sync_url)
         .expect("client")
         .with_client_cn("gbr-analyst.nato.mil")
         .expect("cn");

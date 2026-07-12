@@ -110,8 +110,6 @@ fn tls_identity() -> TlsIdentity {
 
 #[tokio::test]
 async fn replication_notify_triggers_pep_filtered_pull() {
-    std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
-
     let registry = test_registry();
     let publisher = publisher_broker(&registry);
     let consumer = SecuredExchangeBroker::from_preset(

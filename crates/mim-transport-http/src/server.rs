@@ -4,6 +4,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use mim_crypto::NmbTrustStore;
+use mim_crypto::PkiMode;
 use mim_policy::{SubjectAttributes, SubjectResolver};
 use mim_transport::FederationConfig;
 use mim_transport::secured::SecuredExchangeBroker;
@@ -31,6 +32,11 @@ pub struct HttpExchangeConfig {
 }
 
 impl HttpExchangeConfig {
+    /// Lab/conformance trust store and subject resolver (no environment variables).
+    pub fn lab() -> mim_crypto::CryptoResult<Self> {
+        Self::conformance()
+    }
+
     pub fn conformance() -> mim_crypto::CryptoResult<Self> {
         let kp = mim_crypto::conformance_keypair()?;
         Ok(Self {
@@ -45,8 +51,12 @@ impl HttpExchangeConfig {
         })
     }
 
-    /// Production trust store from `MIM_NMB_TRUST`, or conformance when `MIM_CONFORMANCE_KEYS=1`.
-    pub fn from_env() -> mim_crypto::CryptoResult<Self> {
+    /// Production trust store from `MIM_NMB_TRUST`.
+    pub fn production() -> mim_crypto::CryptoResult<Self> {
+        Self::for_mode(PkiMode::Production)
+    }
+
+    pub fn for_mode(mode: PkiMode) -> mim_crypto::CryptoResult<Self> {
         let federation = FederationConfig::from_env().ok();
         let subject_resolver = SubjectResolver::from_env()
             .or_else(|_| SubjectResolver::conformance())
@@ -60,17 +70,22 @@ impl HttpExchangeConfig {
                     .unwrap_or(false)
             });
         Ok(Self {
-            trust_store: mim_crypto::load_trust_store()?,
+            trust_store: mim_crypto::load_trust_store_for(mode)?,
             subject_resolver,
             require_client_identity,
             fallback_subject: None,
         })
     }
+
+    /// Production trust store from `MIM_NMB_TRUST`.
+    pub fn from_env() -> mim_crypto::CryptoResult<Self> {
+        Self::for_mode(PkiMode::Production)
+    }
 }
 
 impl Default for HttpExchangeConfig {
     fn default() -> Self {
-        Self::from_env().expect("configure MIM_NMB_TRUST or set MIM_CONFORMANCE_KEYS=1")
+        Self::lab().expect("lab HTTP exchange config")
     }
 }
 
@@ -83,6 +98,7 @@ pub struct HttpExchangeServer {
     webhook_targets: Vec<String>,
     federation_pull_url: Option<String>,
     federation_client_cn: Option<String>,
+    federation_pki_mode: PkiMode,
 }
 
 impl HttpExchangeServer {
@@ -95,12 +111,18 @@ impl HttpExchangeServer {
             webhook_targets: Vec::new(),
             federation_pull_url: None,
             federation_client_cn: None,
+            federation_pki_mode: PkiMode::Lab,
         }
     }
 
-    /// Configure coalition federation webhooks and consumer pull URL from [`FederationConfig`].
-    pub fn with_federation(mut self, federation: &FederationConfig) -> Result<Self, String> {
-        if !mim_crypto::conformance_keys_enabled() {
+    /// Configure coalition federation webhooks (and production PKI/mTLS when `mode` is production).
+    pub fn with_federation(
+        mut self,
+        federation: &FederationConfig,
+        mode: PkiMode,
+    ) -> Result<Self, String> {
+        self.federation_pki_mode = mode;
+        if mode == PkiMode::Production {
             federation.apply_pki_env().map_err(|e| e.to_string())?;
             if let Some(ca_path) = federation.client_ca_path() {
                 let pem = std::fs::read(ca_path)
@@ -112,6 +134,15 @@ impl HttpExchangeServer {
             self.webhook_targets = vec![url.to_owned()];
         }
         Ok(self)
+    }
+
+    /// Lab federation wiring: webhook targets only (no production PKI env or mTLS CA).
+    pub fn with_federation_lab(mut self, federation: &FederationConfig) -> Self {
+        self.federation_pki_mode = PkiMode::Lab;
+        if let Some(url) = federation.peer_notify_url("gbr") {
+            self.webhook_targets = vec![url.to_owned()];
+        }
+        self
     }
 
     pub fn with_federation_pull(
@@ -185,6 +216,7 @@ impl HttpExchangeServer {
             webhook_targets: Arc::new(self.webhook_targets.clone()),
             federation_pull_url: self.federation_pull_url.clone(),
             federation_client_cn: self.federation_client_cn.clone(),
+            federation_pki_mode: self.federation_pki_mode,
         };
         Ok((acceptor, routes::exchange_router(state)))
     }
@@ -365,6 +397,7 @@ mod tests {
             webhook_targets: Arc::new(Vec::new()),
             federation_pull_url: None,
             federation_client_cn: None,
+            federation_pki_mode: PkiMode::Lab,
         };
         routes::handle_put(&state, &headers, None, envelope)
             .await

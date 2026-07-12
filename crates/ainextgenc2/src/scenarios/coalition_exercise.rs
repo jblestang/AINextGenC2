@@ -1,5 +1,6 @@
 //! FMN coalition exercise — config-driven HTTPS federation runner.
 
+use mim_crypto::PkiMode;
 use mim_transport::FederationConfig;
 
 use crate::scenarios::allied_sensor_retrieval::{
@@ -28,15 +29,27 @@ impl CoalitionExerciseScenario {
         &self.federation
     }
 
-    /// Run coalition exercise using [`FederationConfig`] + production PKI defaults.
+    /// Production coalition exercise: `pki_env` + `MIM_NMB_TRUST` from environment.
     pub async fn run(&self, stack: &MimStack) -> mim_transport::TransportResult<AlliedSensorRetrievalOutput> {
-        if std::env::var("MIM_CONFORMANCE_KEYS").is_err() {
-            self.federation.apply_pki_env()?;
-        } else {
-            std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
-        }
+        self.federation.apply_pki_env()?;
+        self.run_with_mode(stack, PkiMode::Production).await
+    }
+
+    /// Lab coalition exercise using bundled conformance PKI (no environment variables).
+    pub async fn run_lab(
+        &self,
+        stack: &MimStack,
+    ) -> mim_transport::TransportResult<AlliedSensorRetrievalOutput> {
+        self.run_with_mode(stack, PkiMode::Lab).await
+    }
+
+    async fn run_with_mode(
+        &self,
+        stack: &MimStack,
+        mode: PkiMode,
+    ) -> mim_transport::TransportResult<AlliedSensorRetrievalOutput> {
         AlliedSensorRetrievalScenario::demo()
-            .run_coalition_exercise(stack, Some(&self.federation))
+            .run_coalition_exercise(stack, Some(&self.federation), mode)
             .await
     }
 }
@@ -48,7 +61,6 @@ mod tests {
 
     #[tokio::test]
     async fn coalition_exercise_federation_config_loads() {
-        std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
         let config_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../config/fmn-federation.toml");
         std::env::set_var("MIM_FEDERATION_CONFIG", &config_path);

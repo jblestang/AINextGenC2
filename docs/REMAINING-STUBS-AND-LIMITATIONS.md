@@ -83,7 +83,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | Audit file sink lost hash chain | `FileAuditSink` writes `AuditEnvelope` JSONL; `AuditLog::load_from_file()` |
 | No SIEM export connector | `forward_siem_to_file()`, `forward_log_http()` in `mim-audit` |
 | DCS audit not wired in config/scenario | `[audit]` in `config/dcs-coalition.toml`; DCS scenario exports SIEM JSON |
-| Conformance PKI always default | `mim-crypto/runtime_pki.rs` — production PEM via env; `MIM_CONFORMANCE_KEYS=1` for lab |
+| Conformance PKI for lab | `PkiMode::Lab`, `run_lab()`, `HttpExchangeConfig::lab()` — explicit APIs, no env toggle |
 | No live HTTPS E2E in CI | `mim-transport-http/tests/https_e2e.rs` + `.github/workflows/ci.yml` |
 | In-memory-only coalition federation | `HttpFederationClient` + `federation_e2e` + allied scenario `MIM_FEDERATION_HTTP=1` |
 | Caller-supplied subject only (no PIP) | Fixture LDAP PIP + live LDAP + SAML bearer (`SubjectDirectory`, `saml_pip`) |
@@ -114,7 +114,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 ### 1.4 Conformance / lab key material
 
 - **Location:** `mim-crypto/src/keys.rs`, `fixtures/nmb-conformance-rsa.pk8`
-- **Implemented:** `load_key_ring()` / `load_trust_store()` load production PKCS#8/SPKI paths from environment; conformance fixture only when `MIM_CONFORMANCE_KEYS=1`.
+- **Implemented:** `load_key_ring_for(PkiMode)` / `load_trust_store_for(PkiMode)`; production PEM via env; lab fixtures via `PkiMode::Lab`.
 - **See:** `config/pki.env.example`
 - **Limitation:** Deterministic conformance key remains unsuitable for operational deployment; production paths must be supplied explicitly.
 
@@ -226,7 +226,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 
 ### 7.3 Default trust store is conformance PKI
 
-- **Implemented:** `HttpExchangeConfig::from_env()` loads `MIM_NMB_TRUST` by default; `MIM_CONFORMANCE_KEYS=1` selects conformance fixture.
+- **Implemented:** `HttpExchangeConfig::lab()` / `production()`; `HttpFederationClient::new_lab()`; no conformance env var.
 - **Limitation:** Operators must configure trust PEM paths or explicitly enable conformance mode.
 
 ### 7.4 Raw `ReplicationAgent` copies full journal
@@ -333,17 +333,19 @@ export MIM_NMB_SIGNING_KEY=/etc/mim/nmb-signing.pk8
 export MIM_KAS_SIGNING_KEY=/etc/mim/kas-signing.pk8
 ```
 
-Lab / CI conformance mode:
+Lab / CI conformance mode (explicit API — no environment toggle):
 
 ```bash
-export MIM_CONFORMANCE_KEYS=1
+cargo run --example coalition_exercise          # uses run_lab() / PkiMode::Lab
+cargo run --example dcs_cross_domain            # uses run_lab()
+cargo test --workspace                          # tests call lab APIs directly
 ```
 
 ### HTTPS E2E (implemented)
 
 - Integration test: `cargo test -p mim-transport-http --test https_e2e`
 - Federation test: `cargo test -p mim-transport-http --test federation_e2e`
-- CI workflow: `.github/workflows/ci.yml` (sets `MIM_CONFORMANCE_KEYS=1`)
+- CI workflow: `.github/workflows/ci.yml` (no conformance env vars; tests use `PkiMode::Lab`)
 
 ---
 

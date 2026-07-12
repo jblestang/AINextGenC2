@@ -196,7 +196,7 @@ cargo test -p mim-transport-http --test federation_e2e
 cargo test -p mim-transport-http --test webhook_e2e
 cargo test -p mim-transport-http --test saml_identity_e2e
 MIM_FEDERATION_HTTP=1 cargo run --example allied_c2_sensor_retrieval
-MIM_CONFORMANCE_KEYS=1 cargo run --example coalition_exercise
+cargo run --example coalition_exercise
 cargo run -p ainextgenc2
 cargo run -p ainextgenc2 -- --labeling
 cargo run -p ainextgenc2 -- --mip4

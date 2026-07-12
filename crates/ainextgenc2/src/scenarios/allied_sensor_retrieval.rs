@@ -132,24 +132,29 @@ impl AlliedSensorRetrievalScenario {
         )
     }
 
-    /// Remote HTTPS federation against an ephemeral USA publisher node.
+    /// Remote HTTPS federation against an ephemeral USA publisher node (lab PKI, no env vars).
     pub async fn run_over_http(&self, stack: &MimStack) -> TransportResult<AlliedSensorRetrievalOutput> {
-        std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
-        self.run_coalition_exercise(stack, None).await
+        self.run_coalition_exercise(stack, None, mim_crypto::PkiMode::Lab)
+            .await
     }
 
-    /// Coalition exercise path: production PKI from env + optional [`FederationConfig`].
+    /// Coalition exercise path with explicit [`PkiMode`] and optional [`FederationConfig`].
     pub async fn run_coalition_exercise(
         &self,
         stack: &MimStack,
         federation: Option<&FederationConfig>,
+        pki_mode: mim_crypto::PkiMode,
     ) -> TransportResult<AlliedSensorRetrievalOutput> {
         use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer, HttpFederationClient};
 
         let prepared = self.prepare_publisher(stack)?;
         let tls = lab_tls_identity().map_err(|e| TransportError::Validation(e))?;
-        let config = HttpExchangeConfig::from_env()
-            .map_err(|e| TransportError::Validation(e.to_string()))?;
+        let config = match pki_mode {
+            mim_crypto::PkiMode::Lab => HttpExchangeConfig::lab()
+                .map_err(|e| TransportError::Validation(e.to_string()))?,
+            mim_crypto::PkiMode::Production => HttpExchangeConfig::production()
+                .map_err(|e| TransportError::Validation(e.to_string()))?,
+        };
 
         let mut server = HttpExchangeServer::new(
             std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
@@ -158,9 +163,12 @@ impl AlliedSensorRetrievalScenario {
         .with_config(config);
 
         if let Some(fed) = federation {
-            server = server
-                .with_federation(fed)
-                .map_err(|e| TransportError::Validation(e))?;
+            server = match pki_mode {
+                mim_crypto::PkiMode::Lab => server.with_federation_lab(fed),
+                mim_crypto::PkiMode::Production => server
+                    .with_federation(fed, mim_crypto::PkiMode::Production)
+                    .map_err(|e| TransportError::Validation(e))?,
+            };
         }
 
         let registry = prepared.registry.clone();
@@ -175,7 +183,7 @@ impl AlliedSensorRetrievalScenario {
             .map_err(|e| TransportError::Validation(e))?;
 
         let sync_url = format!("https://{addr}/mip4-ies/v1/sync");
-        let client = HttpFederationClient::new(&sync_url)?
+        let client = HttpFederationClient::new_with_mode(&sync_url, pki_mode)?
             .with_client_cn("gbr-analyst.nato.mil")
             .map_err(|e| TransportError::Validation(e.to_string()))?;
 

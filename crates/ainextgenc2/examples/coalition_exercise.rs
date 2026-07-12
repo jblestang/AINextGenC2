@@ -6,7 +6,10 @@
 //!   cargo run --example coalition_exercise
 //!
 //! Lab (conformance PKI):
-//!   MIM_CONFORMANCE_KEYS=1 cargo run --example coalition_exercise
+//!   cargo run --example coalition_exercise
+//!
+//! Production PKI (`config/pki.env.example` + `MIM_NMB_TRUST`):
+//!   cargo run --example coalition_exercise -- --production
 
 use ainextgenc2::{CoalitionExerciseScenario, MimStack, PolicyAccessDecision};
 
@@ -24,7 +27,12 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     let stack = MimStack::load()?;
     let scenario = CoalitionExerciseScenario::from_env()?;
-    let output = tokio::runtime::Runtime::new()?.block_on(scenario.run(&stack))?;
+    let production = std::env::args().any(|arg| arg == "--production");
+    let output = if production {
+        tokio::runtime::Runtime::new()?.block_on(scenario.run(&stack))?
+    } else {
+        tokio::runtime::Runtime::new()?.block_on(scenario.run_lab(&stack))?
+    };
 
     println!("FMN Coalition Exercise");
     println!("======================");

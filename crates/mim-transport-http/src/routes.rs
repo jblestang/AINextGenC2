@@ -26,9 +26,11 @@ use mim_transport::{
     encode_oid_for_path, filter_from_query, notify_webhooks, ReplicationNotifyPayload,
     TransportError, TransportResult,
 };
+use mim_crypto::PkiMode;
 use serde::Deserialize;
 use tokio::sync::Mutex;
 
+use crate::federation_client::HttpFederationClient;
 use crate::identity::{resolve_request_subject, TlsClientIdentity, HEADER_MIM_CLIENT_CERT_SHA256};
 
 /// Shared HTTP application state.
@@ -44,6 +46,7 @@ pub struct AppState {
     /// Consumer-side publisher sync URL used by the replication notify handler.
     pub federation_pull_url: Option<String>,
     pub federation_client_cn: Option<String>,
+    pub federation_pki_mode: PkiMode,
 }
 
 /// Build the MIP4-IES REST router (`/mip4-ies/v1/objects` CRUD + replication sync).
@@ -250,7 +253,7 @@ async fn replication_notify(
         .federation_client_cn
         .clone()
         .unwrap_or_else(|| "gbr-analyst.nato.mil".into());
-    let client = match crate::federation_client::HttpFederationClient::new(&pull_url)
+    let client = match HttpFederationClient::new_with_mode(&pull_url, state.federation_pki_mode)
         .and_then(|c| c.with_client_cn(client_cn))
     {
         Ok(client) => client,
@@ -588,6 +591,7 @@ mod tests {
             webhook_targets: Arc::new(Vec::new()),
             federation_pull_url: None,
             federation_client_cn: None,
+            federation_pki_mode: PkiMode::Lab,
         }
     }
 

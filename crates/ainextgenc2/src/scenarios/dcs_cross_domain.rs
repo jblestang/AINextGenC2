@@ -1,7 +1,7 @@
 //! Cross-domain DCS scenario: labeled MIM radar exchange across security domains.
 
 use mim_audit::{forward_siem_to_file, AuditLog};
-use mim_crypto::load_key_ring;
+use mim_crypto::{load_key_ring_for, PkiMode};
 use mim_dcs::{
     bundled_config_path, CrossDomainGuard, CrossDomainTransfer, DcsConfig, GuardDecision,
     LabeledMimExchange, TransferOutcome,
@@ -67,8 +67,17 @@ impl DcsCrossDomainScenario {
     }
 
     pub fn run(&self, stack: &MimStack) -> mim_core::MimResult<DcsScenarioOutput> {
+        self.run_with_pki(stack, PkiMode::Production)
+    }
+
+    /// Lab run using bundled conformance keys (no environment variables).
+    pub fn run_lab(&self, stack: &MimStack) -> mim_core::MimResult<DcsScenarioOutput> {
+        self.run_with_pki(stack, PkiMode::Lab)
+    }
+
+    fn run_with_pki(&self, stack: &MimStack, mode: PkiMode) -> mim_core::MimResult<DcsScenarioOutput> {
         let config = self.config();
-        let ring = load_key_ring().map_err(|e| mim_core::MimError::Validation(e.to_string()))?;
+        let ring = load_key_ring_for(mode).map_err(|e| mim_core::MimError::Validation(e.to_string()))?;
         let registry = stack.registry();
         let radar_store = AirDefenseRadarScenario::demo().build_store(registry)?;
 
@@ -160,9 +169,8 @@ mod tests {
 
     #[test]
     fn dcs_scenario_downgrades_and_releases() {
-        std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
         let stack = MimStack::load().expect("stack");
-        let output = DcsCrossDomainScenario::demo().run(&stack).expect("run");
+        let output = DcsCrossDomainScenario::demo().run_lab(&stack).expect("run");
         assert_eq!(output.transfer_decision, "DOWNGRADE");
         assert!(output.labeling_compliant);
         assert!(output.label_xml.is_some());

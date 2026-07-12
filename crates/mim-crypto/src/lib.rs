@@ -39,8 +39,8 @@ pub use keys::{
 };
 pub use pki::{NmbKeyRing, NmbTrustStore};
 pub use runtime_pki::{
-    conformance_keys_enabled, load_key_ring, load_trust_store, ENV_CONFORMANCE_KEYS,
-    ENV_KAS_SIGNING_KEY, ENV_NMB_SIGNING_KEY, ENV_NMB_TRUST,
+    load_key_ring, load_key_ring_for, load_trust_store, load_trust_store_for, PkiMode,
+    ENV_CONFORMANCE_KEYS, ENV_KAS_SIGNING_KEY, ENV_NMB_SIGNING_KEY, ENV_NMB_TRUST,
 };
 pub use provider::{
     sign_nmb_binding, verify_nmb_binding, CryptoProvider, selected_provider, NMBS_ALGORITHM,

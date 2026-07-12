@@ -14,7 +14,12 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
     let stack = MimStack::load()?;
-    let output = DcsCrossDomainScenario::demo().run(&stack)?;
+    let production = std::env::args().any(|arg| arg == "--production");
+    let output = if production {
+        DcsCrossDomainScenario::demo().run(&stack)?
+    } else {
+        DcsCrossDomainScenario::demo().run_lab(&stack)?
+    };
 
     println!("DCS Cross-Domain Labeling Example");
     println!("=================================");

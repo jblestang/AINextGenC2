@@ -1,5 +1,6 @@
 //! HTTP client for coalition MIP4-IES federation (remote sync + object fetch).
 
+use mim_crypto::PkiMode;
 use mim_runtime::{MimInstance, ObjectIdentifier};
 use mim_transport::{
     encode_oid_for_path, FederationPublisher, GetByOidResponse, ReplicationApplyReport,
@@ -20,11 +21,21 @@ pub struct HttpFederationClient {
 }
 
 impl HttpFederationClient {
-    /// Connect to a publisher sync endpoint (e.g. `https://usa-c2.fmn.mil/mip4-ies/v1/sync`).
+    /// Connect to a publisher sync endpoint using production TLS verification.
     pub fn new(sync_url: impl Into<String>) -> TransportResult<Self> {
+        Self::new_with_mode(sync_url, PkiMode::Production)
+    }
+
+    /// Connect using lab TLS settings (accepts ephemeral/self-signed test certificates).
+    pub fn new_lab(sync_url: impl Into<String>) -> TransportResult<Self> {
+        Self::new_with_mode(sync_url, PkiMode::Lab)
+    }
+
+    /// Connect with an explicit [`PkiMode`] (no environment variables).
+    pub fn new_with_mode(sync_url: impl Into<String>, mode: PkiMode) -> TransportResult<Self> {
         let sync_url = sync_url.into();
         let objects_base_url = derive_objects_base_url(&sync_url)?;
-        let client = Self::build_http_client()?;
+        let client = Self::build_http_client(mode)?;
         Ok(Self {
             client,
             sync_url,
@@ -58,18 +69,19 @@ impl HttpFederationClient {
         config: &FederationConfig,
         peer_role: &str,
         client_cn: impl Into<String>,
+        mode: PkiMode,
     ) -> TransportResult<Self> {
         let sync_url = config.peer_sync_url(peer_role).ok_or_else(|| {
             TransportError::InvalidRequest(format!(
                 "federation config has no peer sync URL for '{peer_role}'"
             ))
         })?;
-        Self::new(sync_url)?.with_client_cn(client_cn)
+        Self::new_with_mode(sync_url, mode)?.with_client_cn(client_cn)
     }
 
-    fn build_http_client() -> TransportResult<reqwest::Client> {
+    fn build_http_client(mode: PkiMode) -> TransportResult<reqwest::Client> {
         let mut builder = reqwest::Client::builder();
-        if mim_crypto::conformance_keys_enabled() {
+        if mode == PkiMode::Lab {
             builder = builder.danger_accept_invalid_certs(true);
         }
         builder

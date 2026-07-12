@@ -83,8 +83,6 @@ fn secured_broker() -> SecuredExchangeBroker {
 
 #[tokio::test]
 async fn https_put_get_delete_lifecycle() {
-    std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
-
     let keys = conformance_keypair().expect("keys");
     let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
     let instance = labeled_target("HOSTILE-HTTPS");
@@ -171,8 +169,6 @@ async fn https_put_get_delete_lifecycle() {
 
 #[tokio::test]
 async fn https_get_returns_jsonld_when_accepted() {
-    std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
-
     let keys = conformance_keypair().expect("keys");
     let label = ConfidentialityLabel::new(LabelPolicy::nato(), ClassificationLevel::Secret);
     let instance = labeled_target("HOSTILE-JSONLD-HTTPS");
@@ -240,9 +236,8 @@ async fn https_get_returns_jsonld_when_accepted() {
 }
 
 #[tokio::test]
-async fn https_config_from_env_uses_conformance_trust_store() {
-    std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
-    let config = HttpExchangeConfig::from_env().expect("config");
+async fn lab_config_uses_conformance_trust_store() {
+    let config = HttpExchangeConfig::lab().expect("config");
     let keys = conformance_keypair().expect("keys");
     assert_eq!(
         config
