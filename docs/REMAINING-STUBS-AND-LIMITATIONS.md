@@ -193,7 +193,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 
 ### 7.4 Raw `ReplicationAgent` copies full journal
 
-- **Limitation:** Unfiltered replication from raw `ExchangeBroker` copies all journal entries; use `SecuredExchangeBroker.sync_since()` for PEP-filtered sync.
+- **Limitation:** Unfiltered replication from raw `ExchangeBroker` copies all journal entries; use `SecuredExchangeBroker.sync_since_as()` or `HttpFederationClient::replicate_into()` for PEP-filtered sync.
 
 ---
 
@@ -237,7 +237,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | `air_defense_radar` | Synthetic radar tracks |
 | `dcs_cross_domain` | High→low downgrade + ZTDF |
 | `mip4_ies_exchange` | PEP-gated broker |
-| `allied_sensor_retrieval` | Coalition sync; `USA-EYES-ONLY` hidden from GBR |
+| `allied_sensor_retrieval` | Coalition sync (in-process or `MIM_FEDERATION_HTTP=1` HTTPS); `USA-EYES-ONLY` hidden from GBR |
 | `transport_exchange` | Secured publish + filter |
 
 - **Limitation:** Not connected to live C2 systems; no SAR/LOC/national-separation scenarios.

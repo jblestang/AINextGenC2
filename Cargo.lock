@@ -36,9 +36,11 @@ dependencies = [
  "mim-stanag4774",
  "mim-stanag4778",
  "mim-transport",
+ "mim-transport-http",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "tokio",
 ]
 
 [[package]]

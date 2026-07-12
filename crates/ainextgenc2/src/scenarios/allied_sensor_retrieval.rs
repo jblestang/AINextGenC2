@@ -3,11 +3,11 @@
 //! Models the MIP4-IES flow:
 //! 1. A `SiteAirDefenceRadar` sensor reports `TrackIdentifier` and `Target` instances to a USA national C2.
 //! 2. The national broker journals PutObject operations with NATO labels and coalition releasability.
-//! 3. A GBR allied C2 replicates the journal via [`ReplicationAgent`].
+//! 3. A GBR allied C2 replicates the journal (in-process or over HTTPS federation).
 //! 4. A GBR analyst queries targets/tracks through a PEP-gated broker (nationality + clearance).
 
 use mim_labeling::{ClassificationLevel, LabelPolicy};
-use mim_policy::SubjectAttributes;
+use mim_policy::{SubjectAttributes, SubjectResolver};
 use mim_transport::{
     ExchangeBroker, GetByFilterRequest, ReplicationAgent, SecuredExchangeBroker, TransportError,
     TransportResult,
@@ -43,11 +43,30 @@ pub struct AlliedSensorRetrievalOutput {
     pub retrieved: Vec<RetrievedTrack>,
 }
 
+/// Coalition replication transport for the allied sensor scenario.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum FederationTransport {
+    /// In-process broker journal pull (fast lab demo).
+    #[default]
+    InMemory,
+    /// Remote HTTPS federation via `HttpFederationClient`.
+    Http,
+}
+
 /// National + allied C2 exchange for coalition sensor track sharing.
 #[derive(Clone, Debug)]
 pub struct AlliedSensorRetrievalScenario {
     usa_domain_id: String,
     allied_domain_id: String,
+    transport: FederationTransport,
+}
+
+struct PreparedPublisher {
+    registry: mim_model::ModelRegistry,
+    usa_c2: SecuredExchangeBroker,
+    usa_published_count: usize,
+    sensor_name: String,
+    gbr_subject: SubjectAttributes,
 }
 
 impl Default for AlliedSensorRetrievalScenario {
@@ -55,6 +74,7 @@ impl Default for AlliedSensorRetrievalScenario {
         Self {
             usa_domain_id: "DOMAIN-HIGH".to_owned(),
             allied_domain_id: "DOMAIN-HIGH".to_owned(),
+            transport: FederationTransport::InMemory,
         }
     }
 }
@@ -64,7 +84,104 @@ impl AlliedSensorRetrievalScenario {
         Self::default()
     }
 
+    pub fn with_transport(mut self, transport: FederationTransport) -> Self {
+        self.transport = transport;
+        self
+    }
+
+    /// In-process replication (default demo path).
     pub fn run(&self, stack: &MimStack) -> TransportResult<AlliedSensorRetrievalOutput> {
+        let prepared = self.prepare_publisher(stack)?;
+        let mut allied_broker = ExchangeBroker::new(prepared.registry.clone());
+        let replication = ReplicationAgent::pull_and_apply_for_subject(
+            &mut allied_broker,
+            &prepared.usa_c2,
+            prepared.gbr_subject.clone(),
+            0,
+        )?;
+        self.finish_allied_query(
+            prepared.sensor_name,
+            prepared.usa_published_count,
+            prepared.gbr_subject,
+            allied_broker,
+            replication.applied,
+        )
+    }
+
+    /// Remote HTTPS federation against an ephemeral USA publisher node.
+    pub async fn run_over_http(&self, stack: &MimStack) -> TransportResult<AlliedSensorRetrievalOutput> {
+        use mim_crypto::NmbTrustStore;
+        use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer, HttpFederationClient};
+
+        std::env::set_var("MIM_CONFORMANCE_KEYS", "1");
+
+        let prepared = self.prepare_publisher(stack)?;
+        let tls = lab_tls_identity().map_err(|e| TransportError::Validation(e))?;
+        let config = HttpExchangeConfig {
+            trust_store: NmbTrustStore::from_verifying_keys([mim_crypto::conformance_keypair()
+                .map_err(|e| TransportError::Validation(e.to_string()))?
+                .verifying_key()
+                .clone()]),
+            subject_resolver: SubjectResolver::conformance()
+                .map_err(|e| TransportError::Validation(e.to_string()))?,
+            require_client_identity: true,
+            fallback_subject: None,
+        };
+
+        let server = HttpExchangeServer::new(
+            std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+            tls,
+        )
+        .with_config(config);
+
+        let registry = prepared.registry.clone();
+        let sensor_name = prepared.sensor_name.clone();
+        let usa_published_count = prepared.usa_published_count;
+        let gbr_subject = prepared.gbr_subject.clone();
+
+        let (addr, server_task) = server
+            .serve_ephemeral(prepared.usa_c2)
+            .await
+            .map_err(|e| TransportError::Validation(e))?;
+
+        let sync_url = format!("https://{addr}/mip4-ies/v1/sync");
+        let client = HttpFederationClient::new(&sync_url)
+            .map_err(|e| TransportError::Validation(e.to_string()))?
+            .with_client_cn("gbr-analyst.nato.mil")
+            .map_err(|e| TransportError::Validation(e.to_string()))?;
+
+        let mut allied_broker = ExchangeBroker::new(registry);
+        let report = client
+            .replicate_into(&mut allied_broker, 0)
+            .await
+            .map_err(|e| TransportError::Validation(e.to_string()))?;
+
+        server_task.abort();
+        let _ = server_task.await;
+
+        self.finish_allied_query(
+            sensor_name,
+            usa_published_count,
+            gbr_subject,
+            allied_broker,
+            report.applied,
+        )
+    }
+
+    /// Run using [`FederationTransport`] (HTTP path blocks on a local async runtime).
+    pub fn run_federated(&self, stack: &MimStack) -> TransportResult<AlliedSensorRetrievalOutput> {
+        match self.transport {
+            FederationTransport::InMemory => self.run(stack),
+            FederationTransport::Http => {
+                let runtime = tokio::runtime::Runtime::new().map_err(|e| {
+                    TransportError::Validation(format!("tokio runtime: {e}"))
+                })?;
+                runtime.block_on(self.run_over_http(stack))
+            }
+        }
+    }
+
+    fn prepare_publisher(&self, stack: &MimStack) -> TransportResult<PreparedPublisher> {
         let registry = stack.registry();
         let sensor = AirDefenseRadarScenario::demo().with_detection(RadarDetection {
             track_number: 103,
@@ -97,18 +214,26 @@ impl AlliedSensorRetrievalScenario {
             &self.usa_domain_id,
         )?;
         let usa_responses = usa_c2.publish_store(instances)?;
-        let usa_published_count = usa_responses.len();
-
         let gbr_subject = SubjectAttributes::new("gbr-allied-analyst", ClassificationLevel::Secret)
             .with_nationality("GBR");
-        let mut allied_broker = ExchangeBroker::new(registry.clone());
-        let replication = ReplicationAgent::pull_and_apply_for_subject(
-            &mut allied_broker,
-            &usa_c2,
-            gbr_subject.clone(),
-            0,
-        )?;
 
+        Ok(PreparedPublisher {
+            registry: registry.clone(),
+            usa_c2,
+            usa_published_count: usa_responses.len(),
+            sensor_name,
+            gbr_subject,
+        })
+    }
+
+    fn finish_allied_query(
+        &self,
+        sensor_name: String,
+        usa_published_count: usize,
+        gbr_subject: SubjectAttributes,
+        allied_broker: ExchangeBroker,
+        replication_applied: usize,
+    ) -> TransportResult<AlliedSensorRetrievalOutput> {
         let gbr_c2 = SecuredExchangeBroker::from_preset(
             allied_broker,
             gbr_subject,
@@ -168,7 +293,7 @@ impl AlliedSensorRetrievalScenario {
             usa_nationality: "USA".into(),
             allied_nationality: "GBR".into(),
             usa_published_count,
-            replication_applied: replication.applied,
+            replication_applied,
             gbr_target_count: targets.count,
             gbr_track_count: tracks.count,
             hostile_track_oid,
@@ -176,6 +301,15 @@ impl AlliedSensorRetrievalScenario {
             retrieved,
         })
     }
+}
+
+fn lab_tls_identity() -> Result<mim_transport_http::TlsIdentity, String> {
+    let base = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../mim-transport-http/fixtures");
+    mim_transport_http::TlsIdentity::from_pem_files(
+        base.join("test-server.crt"),
+        base.join("test-server.key"),
+    )
 }
 
 fn track_summary(
@@ -248,7 +382,6 @@ mod tests {
 
         assert_eq!(output.sensor_name, "Patriot-01");
         assert_eq!(output.usa_published_count, 7);
-        // PEP-filtered sync hides USA-only track 103 and USA-EYES-ONLY target from GBR analyst.
         assert_eq!(output.replication_applied, 5);
         assert_eq!(output.gbr_target_count, 2);
         assert_eq!(output.gbr_track_count, 2);
@@ -262,6 +395,21 @@ mod tests {
             .retrieved
             .iter()
             .any(|track| track.name.as_deref() == Some("USA-EYES-ONLY")));
+    }
+
+    #[tokio::test]
+    async fn allied_c2_http_federation_replication() {
+        let stack = MimStack::load().expect("stack");
+        let output = AlliedSensorRetrievalScenario::demo()
+            .with_transport(FederationTransport::Http)
+            .run_over_http(&stack)
+            .await
+            .expect("run");
+
+        assert_eq!(output.usa_published_count, 7);
+        assert_eq!(output.replication_applied, 5);
+        assert_eq!(output.gbr_target_count, 2);
+        assert!(output.usa_only_hidden_from_allied);
     }
 
     #[test]

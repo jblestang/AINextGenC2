@@ -98,7 +98,7 @@ Import pipeline:
 | `air_defense_radar` | `cargo run --example air_defense_radar` | Sensor → MIM tracks/targets |
 | `dcs_cross_domain` | `cargo run --example dcs_cross_domain` | STANAG label + NMBS + ZTDF + guard downgrade |
 | `mip4_ies_exchange` | `cargo run --example mip4_ies_exchange` | PEP-gated PutObject / GetByFilter |
-| `allied_sensor_retrieval` | library API | USA→GBR coalition sync; national-only tracks hidden |
+| `allied_sensor_retrieval` | `cargo run --example allied_c2_sensor_retrieval` | USA→GBR coalition sync; set `MIM_FEDERATION_HTTP=1` for HTTPS federation |
 | `transport_exchange` | library API | Secured broker publish + filter |
 
 **Not yet implemented:** SAR mission compartment, national/coalition dual-broker separation, LOC tactical release scenarios.
