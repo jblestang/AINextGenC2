@@ -165,6 +165,16 @@ impl FederationConfig {
         }
     }
 
+    /// Resolved LDAP PIP config path for this federation node.
+    pub fn ldap_config_path(&self) -> &str {
+        &self.local_node.ldap_config
+    }
+
+    /// Wire `MIM_LDAP_PIP_CONFIG` for [`SubjectResolver::from_env`].
+    pub fn apply_ldap_env(&self) {
+        std::env::set_var("MIM_LDAP_PIP_CONFIG", &self.local_node.ldap_config);
+    }
+
     /// Load `KEY=VALUE` pairs from the configured `pki_env` file into the process environment.
     pub fn apply_pki_env(&self) -> TransportResult<()> {
         let Some(path) = &self.local_node.pki_env else {

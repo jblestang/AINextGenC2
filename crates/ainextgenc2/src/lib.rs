@@ -17,8 +17,8 @@ pub mod stack;
 
 pub use scenarios::{
     AirDefenseRadarScenario, AlliedSensorRetrievalOutput, AlliedSensorRetrievalScenario,
-    CoalitionExerciseScenario, DcsCrossDomainScenario, DcsScenarioOutput, FederationTransport,
-    PolicyAccessDecision, RadarDetection, RetrievedTrack, ScenarioOutput, TransportExchangeScenario,
-    TransportScenarioOutput,
+    CoalitionExerciseScenario, CoalitionReplicationMode, DcsCrossDomainScenario, DcsScenarioOutput,
+    FederationTransport, PolicyAccessDecision, RadarDetection, RetrievedTrack, ScenarioOutput,
+    TransportExchangeScenario, TransportScenarioOutput,
 };
 pub use stack::MimStack;

@@ -51,6 +51,25 @@ impl HttpExchangeConfig {
         })
     }
 
+    /// Coalition exercise: identity required, no fallback subject (FMN mTLS/LDAP PIP).
+    pub fn coalition_exercise(
+        mode: PkiMode,
+        ldap_config_path: Option<&str>,
+    ) -> mim_crypto::CryptoResult<Self> {
+        if let Some(path) = ldap_config_path {
+            std::env::set_var("MIM_LDAP_PIP_CONFIG", path);
+        }
+        let subject_resolver = SubjectResolver::from_env()
+            .or_else(|_| SubjectResolver::conformance())
+            .map_err(|e| mim_crypto::CryptoError::Operation(e.to_string()))?;
+        Ok(Self {
+            trust_store: mim_crypto::load_trust_store_for(mode)?,
+            subject_resolver,
+            require_client_identity: true,
+            fallback_subject: None,
+        })
+    }
+
     /// Production trust store from `MIM_NMB_TRUST`.
     pub fn production() -> mim_crypto::CryptoResult<Self> {
         Self::for_mode(PkiMode::Production)

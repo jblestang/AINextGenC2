@@ -71,7 +71,7 @@ Import pipeline:
 | Tier | Status | Notes |
 |------|--------|-------|
 | **Development / lab** | **Ready** | Full stack; conformance PKI; all compliance suites pass |
-| **Coalition exercise** | **Ready** | Config-driven federation (`FederationConfig`); production PKI via `MIM_NMB_TRUST` + `pki_env`; HTTPS/mTLS + LDAP/SAML PIP → PEP; webhook notify + pull replication; `coalition_exercise` runner |
+| **Coalition exercise** | **Ready (pilot)** | Dual-node notify+pull runner; `HttpExchangeConfig::coalition_exercise` (identity required); live LDAP CI; production via `--production` + `pki_env` |
 | **Classified accredited** | **Not ready** | FIPS-validated module build, HSM, WORM audit, formal guard accreditation |
 
 ---
@@ -125,10 +125,23 @@ The DCS cross-domain scenario signs audit records, persists envelopes when confi
 | `dcs_cross_domain` | `cargo run --example dcs_cross_domain` | STANAG label + NMBS + ZTDF + guard downgrade + durable audit |
 | `mip4_ies_exchange` | `cargo run --example mip4_ies_exchange` | PEP-gated PutObject / GetByFilter |
 | `allied_sensor_retrieval` | `cargo run --example allied_c2_sensor_retrieval` | USA→GBR coalition sync; set `MIM_FEDERATION_HTTP=1` for HTTPS federation |
-| `coalition_exercise` | `cargo run --example coalition_exercise` | Config-driven FMN exercise (`config/fmn-federation.toml`); production PKI via `pki_env` |
+| `coalition_exercise` | `cargo run --example coalition_exercise` | FMN notify+pull federation (default lab); `--production` for deployment PKI |
 | `transport_exchange` | library API | Secured broker publish + filter |
 
 **Not yet implemented:** SAR mission compartment, national/coalition dual-broker separation, LOC tactical release scenarios.
+
+### Coalition exercise readiness (pilot criteria)
+
+| Criterion | Status |
+|-----------|--------|
+| USA publisher + GBR consumer nodes (HTTPS) | Implemented (`NotifyPull` default) |
+| PEP-filtered sync (releasability gate) | Implemented |
+| Webhook notify → consumer pull | Implemented + E2E test |
+| mTLS/LDAP identity (no fallback subject) | Implemented (`coalition_exercise` config) |
+| Live LDAP PIP in CI | Implemented (OpenLDAP docker) |
+| Production PKI path | Implemented (`--production`, `pki_env`) |
+| Dual-broker SAR/LOC separation | Not implemented |
+| Live sensor/C2 adapters | Not implemented |
 
 ---
 

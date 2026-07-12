@@ -259,18 +259,25 @@ async fn replication_notify(
         Ok(client) => client,
         Err(err) => return map_error(err),
     };
-    let mut broker = state.broker.lock().await;
-    let since = broker.broker().last_applied_sequence();
-    match client
-        .replicate_into(broker.broker_mut(), since)
-        .await
-    {
-        Ok(report) => negotiated_response(
-            &HeaderMap::new(),
-            WirePayloadFormat::Json,
-            StatusCode::OK,
-            &report,
-        ),
+    let since = {
+        let broker = state.broker.lock().await;
+        broker.broker().last_applied_sequence()
+    };
+    let mut staging = {
+        let broker = state.broker.lock().await;
+        broker.broker().clone()
+    };
+    match client.replicate_into(&mut staging, since).await {
+        Ok(report) => {
+            let mut broker = state.broker.lock().await;
+            *broker.broker_mut() = staging;
+            negotiated_response(
+                &HeaderMap::new(),
+                WirePayloadFormat::Json,
+                StatusCode::OK,
+                &report,
+            )
+        }
         Err(err) => map_error(err),
     }
 }

@@ -37,6 +37,7 @@ dependencies = [
  "mim-stanag4778",
  "mim-transport",
  "mim-transport-http",
+ "reqwest",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

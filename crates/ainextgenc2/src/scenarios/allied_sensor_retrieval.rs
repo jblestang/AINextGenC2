@@ -75,6 +75,16 @@ pub enum FederationTransport {
     Http,
 }
 
+/// How allied C2 receives the publisher journal over HTTPS federation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CoalitionReplicationMode {
+    /// Consumer pulls directly from publisher `/sync`.
+    #[default]
+    DirectPull,
+    /// Publisher notifies consumer webhook; consumer pulls (FMN notify+pull).
+    NotifyPull,
+}
+
 /// National + allied C2 exchange for coalition sensor track sharing.
 #[derive(Clone, Debug)]
 pub struct AlliedSensorRetrievalScenario {
@@ -145,22 +155,100 @@ impl AlliedSensorRetrievalScenario {
         federation: Option<&FederationConfig>,
         pki_mode: mim_crypto::PkiMode,
     ) -> TransportResult<AlliedSensorRetrievalOutput> {
-        use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer, HttpFederationClient};
+        let replication_mode = if federation.is_some() {
+            CoalitionReplicationMode::NotifyPull
+        } else {
+            CoalitionReplicationMode::DirectPull
+        };
+        self.run_coalition_exercise_with_mode(stack, federation, pki_mode, replication_mode)
+            .await
+    }
+
+    /// Coalition exercise with explicit replication mode.
+    pub async fn run_coalition_exercise_with_mode(
+        &self,
+        stack: &MimStack,
+        federation: Option<&FederationConfig>,
+        pki_mode: mim_crypto::PkiMode,
+        replication_mode: CoalitionReplicationMode,
+    ) -> TransportResult<AlliedSensorRetrievalOutput> {
+        use mim_transport_http::HttpExchangeConfig;
 
         let prepared = self.prepare_publisher(stack)?;
-        let tls = lab_tls_identity().map_err(|e| TransportError::Validation(e))?;
-        let config = match pki_mode {
-            mim_crypto::PkiMode::Lab => HttpExchangeConfig::lab()
-                .map_err(|e| TransportError::Validation(e.to_string()))?,
-            mim_crypto::PkiMode::Production => HttpExchangeConfig::production()
-                .map_err(|e| TransportError::Validation(e.to_string()))?,
+        let tls = lab_tls_identity().map_err(TransportError::Validation)?;
+
+        let ldap_path = federation.map(FederationConfig::ldap_config_path);
+        if let Some(fed) = federation {
+            fed.apply_ldap_env();
+        }
+
+        let config = if federation.is_some() {
+            HttpExchangeConfig::coalition_exercise(pki_mode, ldap_path)
+                .map_err(|e| TransportError::Validation(e.to_string()))?
+        } else {
+            match pki_mode {
+                mim_crypto::PkiMode::Lab => HttpExchangeConfig::lab()
+                    .map_err(|e| TransportError::Validation(e.to_string()))?,
+                mim_crypto::PkiMode::Production => HttpExchangeConfig::production()
+                    .map_err(|e| TransportError::Validation(e.to_string()))?,
+            }
         };
+
+        let registry = prepared.registry.clone();
+        let sensor_name = prepared.sensor_name.clone();
+        let usa_published_count = prepared.usa_published_count;
+        let gbr_subject = prepared.gbr_subject.clone();
+
+        let (allied_broker, replication_applied) = match replication_mode {
+            CoalitionReplicationMode::DirectPull => {
+                self.run_direct_pull_federation(
+                    &prepared,
+                    federation,
+                    pki_mode,
+                    &tls,
+                    &config,
+                )
+                .await?
+            }
+            CoalitionReplicationMode::NotifyPull => {
+                self.run_notify_pull_federation(
+                    &prepared,
+                    federation,
+                    pki_mode,
+                    &tls,
+                    &config,
+                    registry.clone(),
+                    gbr_subject.clone(),
+                )
+                .await?
+            }
+        };
+
+        self.finish_allied_query(
+            sensor_name,
+            usa_published_count,
+            gbr_subject,
+            allied_broker,
+            replication_applied,
+            prepared.policy_decisions,
+        )
+    }
+
+    async fn run_direct_pull_federation(
+        &self,
+        prepared: &PreparedPublisher,
+        federation: Option<&FederationConfig>,
+        pki_mode: mim_crypto::PkiMode,
+        tls: &mim_transport_http::TlsIdentity,
+        config: &mim_transport_http::HttpExchangeConfig,
+    ) -> TransportResult<(ExchangeBroker, usize)> {
+        use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer, HttpFederationClient};
 
         let mut server = HttpExchangeServer::new(
             std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
-            tls,
+            tls.clone(),
         )
-        .with_config(config);
+        .with_config(config.clone());
 
         if let Some(fed) = federation {
             server = match pki_mode {
@@ -172,13 +260,8 @@ impl AlliedSensorRetrievalScenario {
         }
 
         let registry = prepared.registry.clone();
-        let sensor_name = prepared.sensor_name.clone();
-        let usa_published_count = prepared.usa_published_count;
-        let gbr_subject = prepared.gbr_subject.clone();
-        let policy_decisions = prepared.policy_decisions;
-
         let (addr, server_task) = server
-            .serve_ephemeral(prepared.usa_c2)
+            .serve_ephemeral(prepared.usa_c2.clone())
             .await
             .map_err(|e| TransportError::Validation(e))?;
 
@@ -196,14 +279,104 @@ impl AlliedSensorRetrievalScenario {
         server_task.abort();
         let _ = server_task.await;
 
-        self.finish_allied_query(
-            sensor_name,
-            usa_published_count,
-            gbr_subject,
-            allied_broker,
-            report.applied,
-            policy_decisions,
+        Ok((allied_broker, report.applied))
+    }
+
+    async fn run_notify_pull_federation(
+        &self,
+        prepared: &PreparedPublisher,
+        federation: Option<&FederationConfig>,
+        pki_mode: mim_crypto::PkiMode,
+        tls: &mim_transport_http::TlsIdentity,
+        config: &mim_transport_http::HttpExchangeConfig,
+        registry: mim_model::ModelRegistry,
+        gbr_subject: SubjectAttributes,
+    ) -> TransportResult<(ExchangeBroker, usize)> {
+        use mim_transport::{ReplicationNotifyPayload, SecuredExchangeBroker};
+        use mim_transport_http::{HttpExchangeConfig, HttpExchangeServer, HttpFederationClient};
+
+        let mut publisher_server = HttpExchangeServer::new(
+            std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+            tls.clone(),
         )
+        .with_config(config.clone());
+
+        if let Some(fed) = federation {
+            publisher_server = match pki_mode {
+                mim_crypto::PkiMode::Lab => publisher_server.with_federation_lab(fed),
+                mim_crypto::PkiMode::Production => publisher_server
+                    .with_federation(fed, mim_crypto::PkiMode::Production)
+                    .map_err(|e| TransportError::Validation(e))?,
+            };
+        }
+
+        let (publisher_addr, publisher_task) = publisher_server
+            .serve_ephemeral(prepared.usa_c2.clone())
+            .await
+            .map_err(|e| TransportError::Validation(e))?;
+
+        let sync_url = format!("https://{publisher_addr}/mip4-ies/v1/sync");
+
+        let consumer_c2 = SecuredExchangeBroker::from_preset(
+            ExchangeBroker::new(registry.clone()),
+            gbr_subject,
+            &self.allied_domain_id,
+        )?;
+
+        let consumer_server = HttpExchangeServer::new(
+            std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+            tls.clone(),
+        )
+        .with_config(config.clone())
+        .with_federation_pull(&sync_url, "gbr-analyst.nato.mil");
+
+        let (consumer_addr, consumer_task) = consumer_server
+            .serve_ephemeral(consumer_c2)
+            .await
+            .map_err(|e| TransportError::Validation(e))?;
+
+        let notify_url = format!("https://{consumer_addr}/mip4-ies/v1/replication/notify");
+        let http = reqwest::Client::builder()
+            .danger_accept_invalid_certs(pki_mode == mim_crypto::PkiMode::Lab)
+            .build()
+            .map_err(|e| TransportError::Validation(e.to_string()))?;
+
+        let notify_response = http
+            .post(&notify_url)
+            .json(&ReplicationNotifyPayload::new(prepared.usa_c2.latest_sequence()))
+            .send()
+            .await
+            .map_err(|e| TransportError::Validation(format!("notify POST: {e}")))?;
+
+        if !notify_response.status().is_success() {
+            return Err(TransportError::Validation(format!(
+                "notify POST returned HTTP {}",
+                notify_response.status()
+            )));
+        }
+
+        let notify_report: mim_transport::ReplicationApplyReport = notify_response
+            .json()
+            .await
+            .map_err(|e| TransportError::Serialization(e.to_string()))?;
+
+        let consumer_sync_url = format!("https://{consumer_addr}/mip4-ies/v1/sync");
+        let client = HttpFederationClient::new_with_mode(&consumer_sync_url, pki_mode)?
+            .with_client_cn("gbr-analyst.nato.mil")
+            .map_err(|e| TransportError::Validation(e.to_string()))?;
+
+        let mut allied_broker = ExchangeBroker::new(registry);
+        let consumer_report = client
+            .replicate_into(&mut allied_broker, 0)
+            .await
+            .map_err(|e| TransportError::Validation(e.to_string()))?;
+
+        publisher_task.abort();
+        consumer_task.abort();
+        let _ = publisher_task.await;
+        let _ = consumer_task.await;
+
+        Ok((allied_broker, notify_report.applied.max(consumer_report.applied)))
     }
 
     /// Run using [`FederationTransport`] (HTTP path blocks on a local async runtime).
@@ -608,6 +781,29 @@ mod tests {
             .expect("run");
 
         assert_eq!(output.usa_published_count, 7);
+        assert_eq!(output.replication_applied, 5);
+        assert_eq!(output.gbr_target_count, 2);
+        assert!(output.usa_only_hidden_from_allied);
+    }
+
+    #[tokio::test]
+    async fn coalition_notify_pull_federation_replication() {
+        let stack = MimStack::load().expect("stack");
+        let config_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../config/fmn-federation.toml");
+        std::env::set_var("MIM_FEDERATION_CONFIG", &config_path);
+
+        let federation = FederationConfig::from_env().expect("federation");
+        let output = AlliedSensorRetrievalScenario::demo()
+            .run_coalition_exercise_with_mode(
+                &stack,
+                Some(&federation),
+                mim_crypto::PkiMode::Lab,
+                CoalitionReplicationMode::NotifyPull,
+            )
+            .await
+            .expect("notify+pull");
+
         assert_eq!(output.replication_applied, 5);
         assert_eq!(output.gbr_target_count, 2);
         assert!(output.usa_only_hidden_from_allied);

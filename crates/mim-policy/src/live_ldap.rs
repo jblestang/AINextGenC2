@@ -10,6 +10,7 @@ use crate::ldap_pip::{LdapPipConfig, LdapSubjectEntry};
 const ATTR_CLEARANCE: &str = "natoClearance";
 const ATTR_NATIONALITY: &str = "natoNationality";
 const ATTR_MISSION: &str = "natoMissionId";
+const ATTR_HANDLING_CAVEATS: &str = "natoHandlingCaveats";
 
 /// Search a live LDAP directory for a principal and map attributes to subject.
 pub fn search_principal(config: &LdapPipConfig, principal: &str) -> PolicyResult<SubjectAttributes> {
@@ -71,6 +72,7 @@ fn search_ldap3(
             ATTR_CLEARANCE,
             ATTR_NATIONALITY,
             ATTR_MISSION,
+            ATTR_HANDLING_CAVEATS,
             "uid",
             "cn",
         ])
@@ -101,7 +103,10 @@ fn search_ldap3(
         subject_id,
         clearance: clearance.clone(),
         nationality: attrs.get(ATTR_NATIONALITY).and_then(|v| v.first()).cloned(),
-        handling_caveats: vec![],
+        handling_caveats: attrs
+            .get(ATTR_HANDLING_CAVEATS)
+            .cloned()
+            .unwrap_or_default(),
         mission_id: attrs.get(ATTR_MISSION).and_then(|v| v.first()).cloned(),
     };
     ldap_entry.to_subject_attributes()

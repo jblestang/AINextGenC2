@@ -16,7 +16,12 @@ attributetype ( 1.3.6.1.4.1.57476.1.3 NAME 'natoMissionId'
   SYNTAX 1.3.6.1.4.1.1466.115.121.1.15
   SINGLE-VALUE )
 
+attributetype ( 1.3.6.1.4.1.57476.1.4 NAME 'natoHandlingCaveats'
+  DESC 'NATO handling caveat codes (multi-valued)'
+  EQUALITY caseIgnoreMatch
+  SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )
+
 objectclass ( 1.3.6.1.4.1.57476.2.1 NAME 'natoOperator'
   DESC 'FMN coalition C2 operator (NATO structured clearance)'
   SUP inetOrgPerson STRUCTURAL
-  MAY ( natoClearance $ natoNationality $ natoMissionId ) )
+  MAY ( natoClearance $ natoNationality $ natoMissionId $ natoHandlingCaveats ) )

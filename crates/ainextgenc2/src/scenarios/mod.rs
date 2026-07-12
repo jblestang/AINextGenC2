@@ -8,8 +8,8 @@ pub mod transport_exchange;
 
 pub use air_defense_radar::{AirDefenseRadarScenario, RadarDetection, ScenarioOutput};
 pub use allied_sensor_retrieval::{
-    AlliedSensorRetrievalOutput, AlliedSensorRetrievalScenario, FederationTransport,
-    PolicyAccessDecision, RetrievedTrack,
+    AlliedSensorRetrievalOutput, AlliedSensorRetrievalScenario, CoalitionReplicationMode,
+    FederationTransport, PolicyAccessDecision, RetrievedTrack,
 };
 pub use coalition_exercise::CoalitionExerciseScenario;
 pub use dcs_cross_domain::{DcsCrossDomainScenario, DcsScenarioOutput};

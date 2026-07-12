@@ -132,9 +132,9 @@ impl ExchangeBroker {
 
     fn apply_delete_entry(&mut self, entry: &JournalEntry) -> TransportResult<()> {
         if self.store_contains(&entry.oid) {
-            let _ = self.delete_object(DeleteObjectRequest {
+            self.delete_object(DeleteObjectRequest {
                 oid: entry.oid.clone(),
-            });
+            })?;
         }
         self.applied_sequence = entry.sequence;
         Ok(())
