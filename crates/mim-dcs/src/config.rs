@@ -13,8 +13,17 @@ use serde::{Deserialize, Serialize};
 
 use crate::guard::CrossDomainGuard;
 
+/// Audit sink type for durable guard audit trails.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AuditSinkType {
+    #[default]
+    File,
+    Worm,
+}
+
 /// Optional durable audit configuration for DCS guard operations.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuditConfig {
     /// Append-only envelope JSONL path for guard/transfer audit records.
@@ -23,6 +32,39 @@ pub struct AuditConfig {
     /// Optional SIEM JSON export path written after each guarded transfer.
     #[serde(default)]
     pub siem_export_path: Option<String>,
+    /// Sink type: `file` (append-only JSONL) or `worm` (write-once with manifest).
+    #[serde(default)]
+    pub sink_type: AuditSinkType,
+    /// Accredited audit profile — requires WORM sink, signed records, fail-closed forwarding.
+    #[serde(default)]
+    pub accredited: bool,
+    /// HTTP SIEM collector endpoint (`http://host:port/path`).
+    #[serde(default)]
+    pub siem_endpoint: Option<String>,
+    /// RFC 5424 syslog TCP endpoint (`host:port` or `tcp://host:port`).
+    #[serde(default)]
+    pub syslog_endpoint: Option<String>,
+    /// Require NMBS-signed audit envelopes (implicit when accredited).
+    #[serde(default)]
+    pub require_signed: bool,
+    /// Fail closed when audit persistence or SIEM forwarding fails (implicit when accredited).
+    #[serde(default)]
+    pub fail_closed: bool,
+}
+
+impl Default for AuditConfig {
+    fn default() -> Self {
+        Self {
+            path: None,
+            siem_export_path: None,
+            sink_type: AuditSinkType::default(),
+            accredited: false,
+            siem_endpoint: None,
+            syslog_endpoint: None,
+            require_signed: false,
+            fail_closed: false,
+        }
+    }
 }
 
 /// Full DCS deployment configuration (TOML/JSON).
@@ -39,6 +81,9 @@ pub struct DcsConfig {
     pub downgrade: DowngradeConfig,
     #[serde(default)]
     pub audit: AuditConfig,
+    /// Accredited guard profile — production PKI only, mandatory WORM audit, fail-closed.
+    #[serde(default)]
+    pub accredited: bool,
     #[serde(skip)]
     config_dir: Option<PathBuf>,
 }
@@ -119,8 +164,28 @@ impl DcsConfig {
             },
             downgrade: DowngradeConfig::default(),
             audit: AuditConfig::default(),
+            accredited: false,
             config_dir: None,
         }
+    }
+
+    /// Whether this deployment uses the accredited guard profile (guard or audit section).
+    pub fn is_accredited_profile(&self) -> bool {
+        self.accredited || self.audit.accredited
+    }
+
+    /// Validate accredited profile requirements before building guard/audit.
+    pub fn validate_accredited_profile(&self) -> Result<(), String> {
+        if !self.is_accredited_profile() {
+            return Ok(());
+        }
+        if self.audit.path.is_none() {
+            return Err("accredited guard requires audit.path (WORM sink)".into());
+        }
+        if self.audit.sink_type != AuditSinkType::Worm {
+            return Err("accredited guard requires audit.sinkType = worm".into());
+        }
+        Ok(())
     }
 
     fn resolve_audit_path(&self, path: &str) -> PathBuf {
@@ -149,13 +214,54 @@ impl DcsConfig {
     }
 
     pub fn build_audit_log(&self) -> Result<Option<mim_audit::AuditLog>, String> {
+        self.validate_accredited_profile()?;
         let Some(path) = &self.audit.path else {
+            if self.is_accredited_profile() {
+                return Err("accredited guard requires audit.path".into());
+            }
             return Ok(None);
         };
         let resolved = self.resolve_audit_path(path);
-        Ok(Some(
-            mim_audit::AuditLog::file(&resolved).map_err(|e| e.to_string())?,
-        ))
+        let log = match self.audit.sink_type {
+            AuditSinkType::File => {
+                mim_audit::AuditLog::file(&resolved).map_err(|e| e.to_string())?
+            }
+            AuditSinkType::Worm => {
+                mim_audit::AuditLog::worm(&resolved).map_err(|e| e.to_string())?
+            }
+        };
+        Ok(Some(log))
+    }
+
+    /// Forward audit to configured SIEM/syslog endpoints. Fails when accredited and forwarding errors.
+    pub fn forward_audit_siem(&self, log: &mim_audit::AuditLog) -> Result<(), String> {
+        let fail_closed = self.audit.fail_closed || self.is_accredited_profile();
+        let max_attempts = if self.is_accredited_profile() { 3 } else { 1 };
+
+        if let Some(path) = self.resolved_siem_export_path() {
+            let result = mim_audit::forward_siem_to_file(log, &path);
+            if fail_closed {
+                result?;
+            }
+        }
+
+        if let Some(endpoint) = &self.audit.siem_endpoint {
+            let result =
+                mim_audit::forward_log_http_accredited(log, endpoint, max_attempts);
+            if fail_closed {
+                result?;
+            }
+        }
+
+        if let Some(endpoint) = &self.audit.syslog_endpoint {
+            let result =
+                mim_audit::forward_log_syslog_accredited(log, endpoint, max_attempts);
+            if fail_closed {
+                result?;
+            }
+        }
+
+        Ok(())
     }
 
     pub fn from_toml_str(data: &str) -> Result<Self, String> {
@@ -245,6 +351,7 @@ impl DcsConfig {
     }
 
     pub fn build_guard(&self) -> Result<CrossDomainGuard, String> {
+        self.validate_accredited_profile()?;
         let store = self.build_policy_store()?;
         let (source, target) = self.primary_domain_pair()?;
         let mut pep = PolicyEnforcementPoint::new(
@@ -254,7 +361,8 @@ impl DcsConfig {
         if let Some(audit) = self.build_audit_log()? {
             pep = pep.with_audit(audit);
         }
-        Ok(CrossDomainGuard::from_policy_plane(pep, source, target))
+        Ok(CrossDomainGuard::from_policy_plane(pep, source, target)
+            .with_accredited(self.is_accredited_profile()))
     }
 
     pub fn primary_domain_pair(&self) -> Result<(SecurityDomain, SecurityDomain), String> {
@@ -338,5 +446,26 @@ mod tests {
                 .expect("downgrade");
         assert_eq!(downgraded.classification, ClassificationLevel::Restricted);
         assert_eq!(downgraded.releasable_countries(), vec!["USA", "GBR"]);
+    }
+
+    #[test]
+    fn loads_accredited_config_with_worm_audit() {
+        let path = bundled_config_path("dcs-accredited.toml");
+        let config = DcsConfig::load_path(&path).expect("load");
+        assert!(config.is_accredited_profile());
+        assert_eq!(config.audit.sink_type, AuditSinkType::Worm);
+        config.validate_accredited_profile().expect("valid");
+        let guard = config.build_guard().expect("guard");
+        assert!(guard.is_accredited());
+    }
+
+    #[test]
+    fn accredited_rejects_non_worm_sink() {
+        let mut config = DcsConfig::conformance_high_to_low();
+        config.accredited = true;
+        config.audit.path = Some("target/test-audit.jsonl".into());
+        config.audit.sink_type = AuditSinkType::File;
+        let err = config.validate_accredited_profile().expect_err("worm");
+        assert!(err.contains("worm"));
     }
 }

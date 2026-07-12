@@ -37,7 +37,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 |------|--------|----------|
 | **Lab / development** | Ready | None — full stack runs with conformance PKI |
 | **Coalition exercise** | Partial | Production PKI not default; HTTP server uses conformance trust store; no live HTTPS E2E in CI; no SAR/LOC/dual-broker scenarios; SIEM forward is best-effort |
-| **Classified accredited** | Not ready | FIPS-validated module not default CI path; RSA outside FIPS boundary; no HSM/PKCS#11; no WORM audit; no accredited guard; no full CMBAC; no LDAP/SAML PIP |
+| **Classified accredited** | Partial (pilot) | FIPS-validated module not default CI path; RSA outside FIPS boundary; no HSM/PKCS#11; WORM audit + accredited guard profile (pilot); no full CMBAC; no LDAP/SAML PIP |
 
 ---
 
@@ -50,7 +50,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | **ZTDF / ACP-240** | Static demo access policy; no KAS protocol; no ABAC at decrypt; OpenTDF manifest subset | CEK unwrap is in-process; holder can decrypt without attribute check |
 | **SPIF** | Parser subset; no signed SPIF distribution (NMRR workflow) | Policy admin is file-based, not centrally signed |
 | **Policy plane** | PIP is caller-supplied (no LDAP/SAML); no full CMBAC matrix; no XACML obligations | Clearance comes from application, not enterprise IdP |
-| **DCS** | Conformance keys in demos; no accredited guard; no dual-broker national/coalition separation | Exercise-ready, not deployment-accredited |
+| **DCS** | Accredited guard profile (pilot); conformance keys in lab demos; no dual-broker national/coalition separation | Exercise-ready; formal accreditation open |
 | **MIP4-IES** | No JSON-LD wire profile in CI; XPath subset only; no NATO-provided accreditation vectors; journal poll only | 100% dimensional conformance; operational interop gaps remain |
 | **Crypto / PKI** | Default `ring`; NMBS/KAS keys collapsed in demos; no HSM | Keys exported as PEM/DER |
 | **Audit** | In-memory fallback when `[audit]` unset; HTTP SIEM has no auth/retry/syslog; not WORM | Durable JSONL works; accredited logging pipeline incomplete |
@@ -292,7 +292,7 @@ Conformance suites report **100%**. The blockers below are **operational and arc
 | 4 | LDAP/SAML PIP (structured NATO clearance) | Coalition exercise | Medium | **Partial** (fixture + live LDAP + SAML bearer) |
 | 5 | MIP4-IES JSON-LD wire profile + NATO accreditation vectors | FMN accreditation | Medium–high | **Partial** (wire + CI E2E; NATO vectors open) |
 | 6 | KAS client stub + ABAC at ZTDF decrypt (ACP-240 full) | ACP-240 full / classified | High | **Partial** (local + HTTP KAS stub; ABAC gate) |
-| 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | Open |
+| 7 | WORM audit media / accredited SIEM connectors | Classified accredited | High | **Partial** (`WormAuditSink`, accredited guard profile; hardware WORM + TLS/auth open) |
 | 8 | Signed SPIF distribution (NMRR-equivalent workflow) | Classified accredited | High | Open |
 | 9 | Authoritative MIM 5.1 OWL (when mimworld republishes) | Manifest accuracy | External | Open |
 
@@ -319,7 +319,7 @@ Tier 1 item **#1 (dual-broker SAR/LOC scenario) is deferred** per project direct
 ### Tier 2 — later
 
 **4. National/coalition dual-broker compartment scenario (SAR / LOC)** — deferred; exercises PDP when scheduled.  
-**5. WORM audit / accredited SIEM** — infrastructure/accreditation.  
+**5. WORM audit / accredited SIEM** — `WormAuditSink` + accredited guard profile implemented (pilot); hardware WORM media and TLS-authenticated SIEM remain infrastructure/accreditation work.  
 **6. Signed SPIF distribution (NMRR)** — policy-admin maturity.  
 **7. Authoritative MIM 5.1 OWL** — blocked on mimworld.
 

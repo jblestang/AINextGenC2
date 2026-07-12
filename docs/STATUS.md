@@ -72,7 +72,7 @@ Import pipeline:
 |------|--------|-------|
 | **Development / lab** | **Ready** | Full stack; conformance PKI; all compliance suites pass |
 | **Coalition exercise** | **Ready (pilot)** | Dual-node notify+pull runner; `HttpExchangeConfig::coalition_exercise` (identity required); live LDAP CI; production via `--production` + `pki_env` |
-| **Classified accredited** | **Not ready** | FIPS-validated module build, HSM, WORM audit, formal guard accreditation |
+| **Classified accredited** | **Partial (pilot)** | WORM audit + accredited guard profile; FIPS-validated module build, HSM, formal guard accreditation still open |
 
 ---
 
@@ -82,11 +82,11 @@ Import pipeline:
 |-----------|-------------------|-------------------|-----|
 | STANAG 4774/4778 | Ready | Partial | Full national extensions in production IdP |
 | ZTDF (ACP-240 Supp. 3–4) | Ready (encoding + ABAC decrypt gate) | Partial | Remote KAS protocol; full OpenTDF schema |
-| DCS cross-domain guard | Ready (config + audit) | Partial | Conformance keys in demos; no accredited guard |
+| DCS cross-domain guard | Ready (config + audit) | Partial | Accredited guard profile (pilot); formal accreditation open |
 | MIP4-IES transport | Ready (100% dimensional + HTTPS/JSON-LD E2E) | Ready | NATO accreditation vectors; full XPath |
 | Policy plane (PIP/PDP/PEP) | Ready (caveats + mission + LDAP/SAML PIP) | Ready | No full CMBAC; production IdP wiring |
 | Crypto / PKI | FIPS 140-3 default + separate NMB/KAS keys | Ready | RSA outside FIPS module; HSM not integrated |
-| Audit | Durable envelope JSONL + SIEM export | Partial | No WORM media; HTTP SIEM is best-effort |
+| Audit | Durable envelope JSONL + SIEM export | Partial | WORM sink + accredited SIEM retry/syslog (pilot) |
 | Scenarios | 6 demos + coalition exercise | Ready | Synthetic data; no live C2 integration |
 
 ---
@@ -99,11 +99,13 @@ Import pipeline:
 | NMBS-signed audit records | **Implemented** | `AuditLog::with_signing_key()` |
 | In-memory sink | **Implemented** | `AuditLog::memory()` — tests and fallback |
 | Durable file sink | **Implemented** | `FileAuditSink` writes envelope JSONL (not raw records) |
+| WORM file sink | **Implemented (pilot)** | `WormAuditSink` — manifest-enforced append-only; truncation detection |
 | Chain reload | **Implemented** | `AuditLog::load_from_file()` + `verify_chain()` |
 | SIEM JSON export | **Implemented** | `export_siem()` / `forward_siem_to_file()` |
-| HTTP SIEM forward | **Implemented** | `forward_log_http()` — stdlib HTTP POST (best-effort) |
-| DCS config wiring | **Implemented** | `[audit]` in `config/dcs-coalition.toml` |
-| WORM / accredited SIEM | **Not implemented** | No write-once media; no syslog/auth/retry |
+| HTTP SIEM forward | **Implemented** | `forward_log_http()` / `forward_log_http_accredited()` with retry |
+| Syslog forward | **Implemented (pilot)** | RFC 5424 TCP via `forward_log_syslog_accredited()` |
+| DCS config wiring | **Implemented** | `[audit]` in `config/dcs-coalition.toml` and `config/dcs-accredited.toml` |
+| WORM / accredited SIEM | **Partial (pilot)** | `WormAuditSink` + `config/dcs-accredited.toml`; syslog/retry; no hardware WORM media |
 
 Default coalition audit paths (relative to `config/dcs-coalition.toml`):
 
@@ -113,7 +115,7 @@ path = "../target/dcs-audit.jsonl"
 siemExportPath = "../target/dcs-siem.json"
 ```
 
-The DCS cross-domain scenario signs audit records, persists envelopes when configured, exports SIEM JSON, and verifies the hash chain on completion.
+The DCS cross-domain scenario signs audit records, persists envelopes when configured, exports SIEM JSON, and verifies the hash chain on completion. Use `DcsCrossDomainScenario::run_accredited()` with `config/dcs-accredited.toml` for the accredited guard profile (WORM audit, production PKI only).
 
 ---
 

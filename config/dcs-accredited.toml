@@ -1,0 +1,42 @@
+# Accredited DCS guard profile — WORM audit, production PKI, fail-closed.
+# Load with: DcsConfig::load_path("config/dcs-accredited.toml")
+
+accredited = true
+
+[[domains]]
+id = "DOMAIN-HIGH"
+name = "High Side"
+maxClassification = "SECRET"
+releasableTo = ["USA", "GBR", "DEU"]
+acceptedNationalities = ["USA", "GBR", "DEU"]
+
+[[domains]]
+id = "DOMAIN-LOW"
+name = "Low Side"
+maxClassification = "RESTRICTED"
+releasableTo = ["USA", "GBR"]
+acceptedNationalities = ["USA", "GBR"]
+
+[[crossDomain]]
+id = "high-to-low"
+source = "DOMAIN-HIGH"
+target = "DOMAIN-LOW"
+description = "Accredited high-side to low-side cross-domain release"
+
+[spif]
+paths = [
+  "crates/mim-spif/fixtures/nato-4774-policy.xml",
+]
+validateXsd = true
+
+[downgrade]
+intersectReleasability = true
+stripNonTargetCategories = true
+
+[audit]
+accredited = true
+sinkType = "worm"
+path = "../target/dcs-accredited-audit.jsonl"
+siemExportPath = "../target/dcs-accredited-siem.json"
+requireSigned = true
+failClosed = true
