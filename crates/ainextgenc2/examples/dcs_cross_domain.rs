@@ -44,6 +44,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         println!("ZTDF manifest:");
         println!("{manifest}");
     }
+    println!(
+        "ZTDF PEP decrypt: {}",
+        if output.ztdf_pep_decrypt_verified {
+            "VERIFIED"
+        } else {
+            "SKIPPED/FAILED"
+        }
+    );
     println!();
     println!("Audit records:    {}", output.audit_record_count);
     println!(

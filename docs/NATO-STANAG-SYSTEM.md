@@ -156,7 +156,7 @@ All scenarios use synthetic data — not connected to live C2 systems. Mission-c
 2. Guard validates SPIF policy and releasability against target domain.
 3. On downgrade: effective label reduced (e.g. SECRET → RESTRICTED).
 4. Outbound NMBS binding + ZTDF ZIP produced; audit chain extended.
-5. Low-side consumer decrypts ZTDF, verifies binding, ingests MIM JSON.
+5. Low-side consumer decrypts ZTDF through **PEP ABAC gate** (`decrypt_with_policy` / `receive_ztdf_on_target`), verifies NMBS binding, ingests MIM JSON.
 
 ## Compliance verification
 
