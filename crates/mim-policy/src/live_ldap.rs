@@ -55,6 +55,22 @@ fn search_ldap3(
     principal: &str,
     filter: &str,
 ) -> PolicyResult<SubjectAttributes> {
+    let ldap_cfg = ldap_cfg.clone();
+    let principal = principal.to_owned();
+    let filter = filter.to_owned();
+    std::thread::Builder::new()
+        .name("mim-ldap-search".into())
+        .spawn(move || search_ldap3_blocking(&ldap_cfg, &principal, &filter))
+        .map_err(|e| PolicyError::Invalid(format!("LDAP search thread: {e}")))?
+        .join()
+        .map_err(|_| PolicyError::Invalid("LDAP search thread panicked".into()))?
+}
+
+fn search_ldap3_blocking(
+    ldap_cfg: &crate::ldap_pip::LdapServerConfig,
+    principal: &str,
+    filter: &str,
+) -> PolicyResult<SubjectAttributes> {
     use ldap3::{LdapConn, Scope, SearchEntry};
 
     let bind_password = std::env::var("MIM_LDAP_BIND_PASSWORD").ok();
@@ -161,5 +177,27 @@ mod tests {
             "uid=gbr-allied-analyst,ou=GBR,ou=operators,dc=nato,dc=int",
         );
         assert_eq!(filter, "(uid=gbr-allied-analyst)");
+    }
+
+    #[tokio::test]
+    async fn ldap3_search_from_tokio_runtime_does_not_panic() {
+        let config = LdapPipConfig {
+            ldap: LdapServerConfig {
+                server: "ldap://127.0.0.1:1".into(),
+                base_dn: "ou=operators,dc=nato,dc=int".into(),
+                bind_dn: None,
+                search_filter: Some("(uid={principal})".into()),
+                fixture_mode: false,
+            },
+            entries_file: None,
+            cert_mappings: vec![],
+            cert_fingerprint_mappings: vec![],
+            default_domain_id: None,
+        };
+        let err = search_principal(&config, "gbr-allied-analyst").expect_err("connect");
+        assert!(
+            !err.to_string().contains("Cannot start a runtime"),
+            "ldap3 must not nest Tokio inside an async test runtime: {err}"
+        );
     }
 }
