@@ -1,6 +1,6 @@
 # AINextGenC2 — Precise Status
 
-Last verified: **2026-07-12** (branch `cursor/real-federation-http-d2ec`, HTTPS federation + LDAP PIP stub).
+Last verified: **2026-07-12** (merged federation, NMB/KAS keys, PEP/PDP allied example).
 
 Run the commands in [Verification](#verification) to reproduce these numbers locally.
 
@@ -82,12 +82,38 @@ Import pipeline:
 |-----------|-------------------|-------------------|-----|
 | STANAG 4774/4778 | Ready | Partial | Full national extensions; LDAP/SAML clearance |
 | ZTDF (ACP-240 Supp. 3–4) | Ready (encoding) | Partial | No KAS protocol; no ABAC at decrypt |
-| DCS cross-domain guard | Ready (config) | Partial | Conformance keys in demos; no accredited guard |
+| DCS cross-domain guard | Ready (config + audit) | Partial | Conformance keys in demos; no accredited guard |
 | MIP4-IES transport | Ready (100% dimensional + HTTPS E2E) | Partial | JSON-LD wire profile; push/webhook replication |
-| Policy plane (PIP/PDP/PEP) | Ready (subset + LDAP PIP stub) | Partial | No full CMBAC; live LDAP/SAML IdP; static PIP fallback |
-| Crypto / PKI | FIPS 140-3 default + production env PKI | Partial | RSA outside FIPS module; HSM not integrated |
+| Policy plane (PIP/PDP/PEP) | Ready (caveats + mission + LDAP PIP stub) | Partial | No full CMBAC; live LDAP/SAML IdP |
+| Crypto / PKI | FIPS 140-3 default + separate NMB/KAS keys | Partial | RSA outside FIPS module; HSM not integrated |
 | Audit | Durable envelope JSONL + SIEM export | Partial | No WORM media; HTTP SIEM is best-effort |
 | Scenarios | 5 demos | Demo only | Synthetic data; no live C2 integration |
+
+---
+
+## Audit trail (`mim-audit`)
+
+| Component | Status | Detail |
+|-----------|--------|--------|
+| Hash-chained envelopes | **Implemented** | `AuditEnvelope` with `previousHash` / `recordHash` |
+| NMBS-signed audit records | **Implemented** | `AuditLog::with_signing_key()` |
+| In-memory sink | **Implemented** | `AuditLog::memory()` — tests and fallback |
+| Durable file sink | **Implemented** | `FileAuditSink` writes envelope JSONL (not raw records) |
+| Chain reload | **Implemented** | `AuditLog::load_from_file()` + `verify_chain()` |
+| SIEM JSON export | **Implemented** | `export_siem()` / `forward_siem_to_file()` |
+| HTTP SIEM forward | **Implemented** | `forward_log_http()` — stdlib HTTP POST (best-effort) |
+| DCS config wiring | **Implemented** | `[audit]` in `config/dcs-coalition.toml` |
+| WORM / accredited SIEM | **Not implemented** | No write-once media; no syslog/auth/retry |
+
+Default coalition audit paths (relative to `config/dcs-coalition.toml`):
+
+```toml
+[audit]
+path = "../target/dcs-audit.jsonl"
+siemExportPath = "../target/dcs-siem.json"
+```
+
+The DCS cross-domain scenario signs audit records, persists envelopes when configured, exports SIEM JSON, and verifies the hash chain on completion.
 
 ---
 
@@ -96,12 +122,28 @@ Import pipeline:
 | Scenario | Example | Demonstrates |
 |----------|---------|--------------|
 | `air_defense_radar` | `cargo run --example air_defense_radar` | Sensor → MIM tracks/targets |
-| `dcs_cross_domain` | `cargo run --example dcs_cross_domain` | STANAG label + NMBS + ZTDF + guard downgrade |
+| `dcs_cross_domain` | `cargo run --example dcs_cross_domain` | STANAG label + NMBS + ZTDF + guard downgrade + durable audit |
 | `mip4_ies_exchange` | `cargo run --example mip4_ies_exchange` | PEP-gated PutObject / GetByFilter |
 | `allied_sensor_retrieval` | `cargo run --example allied_c2_sensor_retrieval` | USA→GBR coalition sync; set `MIM_FEDERATION_HTTP=1` for HTTPS federation |
 | `transport_exchange` | library API | Secured broker publish + filter |
 
 **Not yet implemented:** SAR mission compartment, national/coalition dual-broker separation, LOC tactical release scenarios.
+
+---
+
+## Limitations and roadmap
+
+Full inventory of gaps, closed items, and ROI-ranked implementation order:
+
+**[REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md)**
+
+**Top ROI picks (Tier 1):**
+
+1. National/coalition dual-broker SAR/LOC scenario
+2. MIP4-IES JSON-LD wire profile + NATO accreditation vectors
+3. Live LDAP/SAML IdP integration (beyond fixture PIP)
+
+MIP4-IES transport detail: [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md).
 
 ---
 
@@ -115,8 +157,8 @@ Import pipeline:
 | Cross-domain downgrade + releasability intersection | Implemented |
 | SPIF label validation at bind/guard | Implemented |
 | Audit of permit/deny/downgrade | Implemented (PEP + DCS transfer) |
-| Handling-caveat enforcement in PDP | **Implemented** (restrictive categories vs subject caveats) |
-| `mission_id` in PDP evaluation | **Implemented** (domain `mission_compartments`) |
+| Handling-caveat enforcement in PDP | **Implemented** (restrictive categories vs `SubjectAttributes.handling_caveats`) |
+| `mission_id` in PDP evaluation | **Implemented** (`SecurityDomain.mission_compartments`) |
 | Durable audit envelopes (`FileAuditSink`) | **Implemented** |
 | SIEM JSON export / HTTP forward | **Implemented** (`forward_siem_to_file`, `forward_log_http`) |
 | LDAP PIP stub (fixture-driven clearance lookup) | **Implemented** (`mim-policy/ldap_pip`, `config/fmn-ldap-pip.toml`) |
@@ -124,18 +166,23 @@ Import pipeline:
 | Full CMBAC permissive/restrictive category matrix | **Not implemented** |
 | SAML PIP integration | **Not implemented** |
 
----
+### STANAG 4774 handling caveats (PDP)
 
-## Remaining priorities (operational path)
+Labels with restrictive categories (e.g. UK DEMO `LOCSEN`) are denied unless the subject holds matching caveats:
 
-1. National/coalition dual-broker compartment scenario (SAR, LOC)
-2. MIP4-IES JSON-LD wire profile + NATO accreditation vectors
-3. Live LDAP/SAML IdP integration (beyond fixture PIP)
-4. WORM audit media / accredited SIEM connectors
-5. Signed SPIF distribution (NMRR-equivalent workflow)
-6. KAS client + ABAC at ZTDF decrypt (ACP-240 full)
+```rust
+SubjectAttributes::new("operator", ClassificationLevel::Secret)
+    .with_handling_caveat("LOCSEN")
+```
 
-See [REMAINING-STUBS-AND-LIMITATIONS.md](./REMAINING-STUBS-AND-LIMITATIONS.md) for detail. MIP4-IES transport detail: [MIP4-IES-FMN-READINESS.md](./MIP4-IES-FMN-READINESS.md).
+### Mission compartments (PDP)
+
+Domains may declare authorized mission compartments. Cross-domain transfers into/out of compartmented domains require a matching `mission_id`:
+
+```rust
+SecurityDomain::new("DOMAIN-SAR", "SAR High Side", ClassificationLevel::Secret)
+    .with_mission_compartments(vec!["SAR-OPS-1".into()]);
+```
 
 ---
 
@@ -150,6 +197,7 @@ cargo run -p ainextgenc2
 cargo run -p ainextgenc2 -- --labeling
 cargo run -p ainextgenc2 -- --mip4
 cargo run -p ainextgenc2 -- --adatp
+cargo run --example dcs_cross_domain
 cargo run -p mim-import -- --source bundled:jc3iedm \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 ```

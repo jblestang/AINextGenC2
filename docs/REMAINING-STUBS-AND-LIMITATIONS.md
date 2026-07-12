@@ -6,6 +6,8 @@ Inventory of known gaps, demo-only paths, partial implementations, and operation
 
 This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NATO-STANAG-TECHNOLOGY.md](./NATO-STANAG-TECHNOLOGY.md), and [SOTA-IMPROVEMENTS.md](./SOTA-IMPROVEMENTS.md). Items here are **not** tracked as failing ADatP, labeling, or MIP4 conformance tests unless noted.
 
+Last updated: **2026-07-11** (`main`, commit `d4a5aa1`).
+
 ---
 
 ## Summary
@@ -18,12 +20,42 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | NATO ADatP vectors | **100% — ready** | Partial | Not ready |
 | ZTDF / ACP-240 Supp. 3–4 | Ready (encoding) | Partial (no KAS/ABAC) | Not ready |
 | ACP-240 full (Ed A + Supp. 5) | Partial | Not ready | Not ready |
-| DCS cross-domain | Ready (config file) | Partial | Not ready |
-| Crypto / PKI | FIPS 140-3 default + production env PKI | FIPS-validated default; RSA outside module | HSM / PKCS#11 |
+| DCS cross-domain | Ready (config + audit) | Partial | Not ready |
+| Crypto / PKI | FIPS 140-3 default + separate NMB/KAS keys | FIPS-validated default; RSA outside module | HSM / PKCS#11 |
 | MIM manifest (OWL import) | **932/932 properties (100%)** | JC3IEDM v3.0 bundled | No authoritative MIM 5.1 OWL |
-| Policy plane (CMBAC) | Clearance + releasability subset | Partial | Not ready |
+| Policy plane (CMBAC) | Clearance + caveats + mission subset | Partial | Not ready |
 | Audit | Durable envelope JSONL + SIEM export | Partial | WORM / accredited SIEM not implemented |
 | Scenarios | 5 synthetic demos | Demo only | No live C2 integration |
+
+---
+
+## Limitations by deployment tier
+
+Conformance suites report **100%**. The blockers below are **operational and architectural** — they do not fail automated compliance today.
+
+| Tier | Status | Blockers |
+|------|--------|----------|
+| **Lab / development** | Ready | None — full stack runs with conformance PKI |
+| **Coalition exercise** | Partial | Production PKI not default; HTTP server uses conformance trust store; no live HTTPS E2E in CI; no SAR/LOC/dual-broker scenarios; SIEM forward is best-effort |
+| **Classified accredited** | Not ready | FIPS-validated module not default CI path; RSA outside FIPS boundary; no HSM/PKCS#11; no WORM audit; no accredited guard; no full CMBAC; no LDAP/SAML PIP |
+
+---
+
+## Limitations by subsystem
+
+| Subsystem | Limitation | Impact |
+|-----------|------------|--------|
+| **STANAG 4774** | National extensions and compound category rules not fully modeled; classification values not XSD-enforced | Cannot represent all national label profiles |
+| **STANAG 4778** | Non-assertion bindings lack NMBS by default; SMTP binding library-only; HTTPS server exposes PUT only | Cross-domain still requires assertion binding (by design) |
+| **ZTDF / ACP-240** | Static demo access policy; no KAS protocol; no ABAC at decrypt; OpenTDF manifest subset | CEK unwrap is in-process; holder can decrypt without attribute check |
+| **SPIF** | Parser subset; no signed SPIF distribution (NMRR workflow) | Policy admin is file-based, not centrally signed |
+| **Policy plane** | PIP is caller-supplied (no LDAP/SAML); no full CMBAC matrix; no XACML obligations | Clearance comes from application, not enterprise IdP |
+| **DCS** | Conformance keys in demos; no accredited guard; no dual-broker national/coalition separation | Exercise-ready, not deployment-accredited |
+| **MIP4-IES** | No JSON-LD wire profile in CI; XPath subset only; no NATO-provided accreditation vectors; journal poll only | 100% dimensional conformance; operational interop gaps remain |
+| **Crypto / PKI** | Default `ring`; NMBS/KAS keys collapsed in demos; no HSM | Keys exported as PEM/DER |
+| **Audit** | In-memory fallback when `[audit]` unset; HTTP SIEM has no auth/retry/syslog; not WORM | Durable JSONL works; accredited logging pipeline incomplete |
+| **MIM import** | JC3IEDM v3.0 bundled (not authoritative MIM 5.1 OWL); no OWL reasoning/SHACL | Scale targets met; ontology source is fallback |
+| **Scenarios** | 5 synthetic demos; no live C2; no SAR/LOC/national-separation | Architecture patterns discussed but not demonstrated |
 
 ---
 
@@ -55,6 +87,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | No live HTTPS E2E in CI | `mim-transport-http/tests/https_e2e.rs` + `.github/workflows/ci.yml` |
 | In-memory-only coalition federation | `HttpFederationClient` + `federation_e2e` + allied scenario `MIM_FEDERATION_HTTP=1` |
 | Caller-supplied subject only (no PIP) | Fixture LDAP PIP (`mim-policy/ldap_pip`, `SubjectResolver`, `config/fmn-ldap-pip.toml`) |
+| NMBS and KAS keys collapsed in demos | Separate `conformance_key_ring()` / `conformance_kas_keypair()` hierarchies |
 
 ---
 
@@ -238,7 +271,7 @@ This document complements [NATO-STANAG-SYSTEM.md](./NATO-STANAG-SYSTEM.md), [NAT
 | Scenario | Status |
 |----------|--------|
 | `air_defense_radar` | Synthetic radar tracks |
-| `dcs_cross_domain` | High→low downgrade + ZTDF |
+| `dcs_cross_domain` | High→low downgrade + ZTDF + durable audit + SIEM export |
 | `mip4_ies_exchange` | PEP-gated broker |
 | `allied_sensor_retrieval` | Coalition sync (in-process or `MIM_FEDERATION_HTTP=1` HTTPS); `USA-EYES-ONLY` hidden from GBR |
 | `transport_exchange` | Secured publish + filter |
@@ -269,13 +302,13 @@ Tier 1 item **#1 (dual-broker SAR/LOC scenario) is deferred** per project direct
 
 ### Tier 1 — implement next
 
-**1. LDAP/SAML PIP stub (structured NATO clearance)**  
-- **Why:** Policy plane bottleneck is caller-supplied `SubjectAttributes`; fixture-driven PIP unlocks realistic clearance without full IdP.  
-- **Effort:** Medium.
-
-**2. MIP4-IES JSON-LD wire profile (incremental)**  
+**1. MIP4-IES JSON-LD wire profile (incremental)**  
 - **Why:** Largest MIP4 transport gap independent of NATO shipping vectors.  
 - **Effort:** Medium–high.
+
+**2. Live LDAP/SAML IdP integration**  
+- **Why:** Fixture LDAP PIP is in place; live IdP unlocks operational clearance lookup.  
+- **Effort:** Medium.
 
 **3. KAS client stub + ABAC gate before CEK unwrap**  
 - **Why:** Main path to ACP-240 full; ZTDF encoding is ready.  
@@ -307,6 +340,7 @@ export MIM_CONFORMANCE_KEYS=1
 ### HTTPS E2E (implemented)
 
 - Integration test: `cargo test -p mim-transport-http --test https_e2e`
+- Federation test: `cargo test -p mim-transport-http --test federation_e2e`
 - CI workflow: `.github/workflows/ci.yml` (sets `MIM_CONFORMANCE_KEYS=1`)
 
 ---
@@ -321,6 +355,7 @@ cargo run -p ainextgenc2 -- --mip4
 cargo run -p ainextgenc2 -- --adatp
 cargo run --example dcs_cross_domain
 cargo test -p mim-transport-http --test https_e2e
+cargo test -p mim-transport-http --test federation_e2e
 cargo run -p mim-import -- --source bundled:jc3iedm \
   --output models/mim-full-5.1.json --merge models/mim-core-5.1.json
 ```
