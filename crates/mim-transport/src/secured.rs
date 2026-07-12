@@ -77,17 +77,37 @@ impl SecuredExchangeBroker {
         &self.domain
     }
 
-    pub fn put_object(&mut self, request: PutObjectRequest) -> TransportResult<PutObjectResponse> {
+    pub fn with_subject(&self, subject: SubjectAttributes) -> Self {
+        let mut view = self.clone();
+        view.subject = subject;
+        view
+    }
+
+    pub fn put_object_as(
+        &mut self,
+        subject: SubjectAttributes,
+        request: PutObjectRequest,
+    ) -> TransportResult<PutObjectResponse> {
         let label = Self::instance_label(&request.instance)?;
         self.pep
-            .enforce_access(
-                self.subject.clone(),
-                &label,
-                AccessOperation::Write,
-                &self.domain,
-            )
+            .enforce_access(subject, &label, AccessOperation::Write, &self.domain)
             .map_err(map_policy_error)?;
         self.inner.put_object(request)
+    }
+
+    pub fn put_object(&mut self, request: PutObjectRequest) -> TransportResult<PutObjectResponse> {
+        self.put_object_as(self.subject.clone(), request)
+    }
+
+    /// Accept a STANAG 4778 REST envelope (NMBS assertion binding required).
+    pub fn put_object_enveloped_as(
+        &mut self,
+        subject: SubjectAttributes,
+        envelope: RestEnvelope,
+        verifying_key: &mim_crypto::VerifyingKey,
+    ) -> TransportResult<PutObjectResponse> {
+        let request = unwrap_put_object(&envelope, verifying_key)?;
+        self.put_object_as(subject, request)
     }
 
     /// Accept a STANAG 4778 REST envelope (NMBS assertion binding required).
@@ -105,22 +125,26 @@ impl SecuredExchangeBroker {
         self
     }
 
-    pub fn get_by_oid(&self, request: GetByOidRequest) -> TransportResult<GetByOidResponse> {
+    pub fn get_by_oid_as(
+        &self,
+        subject: SubjectAttributes,
+        request: GetByOidRequest,
+    ) -> TransportResult<GetByOidResponse> {
         let response = self.inner.get_by_oid(request)?;
         let label = Self::instance_label(&response.instance)?;
         self.pep
-            .enforce_access(
-                self.subject.clone(),
-                &label,
-                AccessOperation::Read,
-                &self.domain,
-            )
+            .enforce_access(subject, &label, AccessOperation::Read, &self.domain)
             .map_err(map_policy_error)?;
         Ok(response)
     }
 
-    pub fn get_by_filter(
+    pub fn get_by_oid(&self, request: GetByOidRequest) -> TransportResult<GetByOidResponse> {
+        self.get_by_oid_as(self.subject.clone(), request)
+    }
+
+    pub fn get_by_filter_as(
         &self,
+        subject: SubjectAttributes,
         request: GetByFilterRequest,
     ) -> TransportResult<GetByFilterResponse> {
         let response = self.inner.get_by_filter(request)?;
@@ -131,7 +155,7 @@ impl SecuredExchangeBroker {
             if self
                 .pep
                 .enforce_access(
-                    self.subject.clone(),
+                    subject.clone(),
                     &label,
                     AccessOperation::Read,
                     &self.domain,
@@ -150,8 +174,16 @@ impl SecuredExchangeBroker {
         })
     }
 
-    pub fn delete_object(
+    pub fn get_by_filter(
+        &self,
+        request: GetByFilterRequest,
+    ) -> TransportResult<GetByFilterResponse> {
+        self.get_by_filter_as(self.subject.clone(), request)
+    }
+
+    pub fn delete_object_as(
         &mut self,
+        subject: SubjectAttributes,
         request: DeleteObjectRequest,
     ) -> TransportResult<DeleteObjectResponse> {
         let existing = self.inner.get_by_oid(GetByOidRequest {
@@ -159,14 +191,46 @@ impl SecuredExchangeBroker {
         })?;
         let label = Self::instance_label(&existing.instance)?;
         self.pep
-            .enforce_access(
-                self.subject.clone(),
-                &label,
-                AccessOperation::Delete,
-                &self.domain,
-            )
+            .enforce_access(subject, &label, AccessOperation::Delete, &self.domain)
             .map_err(map_policy_error)?;
         self.inner.delete_object(request)
+    }
+
+    pub fn delete_object(
+        &mut self,
+        request: DeleteObjectRequest,
+    ) -> TransportResult<DeleteObjectResponse> {
+        self.delete_object_as(self.subject.clone(), request)
+    }
+
+    pub fn sync_since_as(&self, subject: SubjectAttributes, since: u64) -> SyncResponse {
+        let raw = self.inner.sync_since(since);
+        let mut entries = Vec::new();
+        for entry in raw.entries {
+            if entry.operation == IesOperation::DeleteObject {
+                entries.push(entry);
+                continue;
+            }
+            if self
+                .get_by_oid_as(
+                    subject.clone(),
+                    GetByOidRequest {
+                        oid: entry.oid.clone(),
+                    },
+                )
+                .is_ok()
+            {
+                entries.push(entry);
+            }
+        }
+        SyncResponse {
+            latest_sequence: raw.latest_sequence,
+            entries,
+        }
+    }
+
+    pub fn sync_since(&self, since: u64) -> SyncResponse {
+        self.sync_since_as(self.subject.clone(), since)
     }
 
     pub fn publish_store(
@@ -181,29 +245,6 @@ impl SecuredExchangeBroker {
 
     pub fn serialize_active_store(&self) -> TransportResult<String> {
         self.inner.serialize_active_store()
-    }
-
-    pub fn sync_since(&self, since: u64) -> SyncResponse {
-        let raw = self.inner.sync_since(since);
-        let mut entries = Vec::new();
-        for entry in raw.entries {
-            if entry.operation == IesOperation::DeleteObject {
-                entries.push(entry);
-                continue;
-            }
-            if self
-                .get_by_oid(GetByOidRequest {
-                    oid: entry.oid.clone(),
-                })
-                .is_ok()
-            {
-                entries.push(entry);
-            }
-        }
-        SyncResponse {
-            latest_sequence: raw.latest_sequence,
-            entries,
-        }
     }
 
     pub fn latest_sequence(&self) -> u64 {

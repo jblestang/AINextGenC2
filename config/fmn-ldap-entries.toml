@@ -1,0 +1,44 @@
+# FMN LDAP directory fixture — NATO structured clearance attributes.
+# Maps to ADatP/FMN operator records used by the policy PIP.
+
+[[entries]]
+principal = "uid=usa-sensor-operator,ou=USA,ou=operators,dc=nato,dc=int"
+subject_id = "usa-sensor-operator"
+clearance = "SECRET"
+nationality = "USA"
+
+[[entries]]
+principal = "uid=gbr-allied-analyst,ou=GBR,ou=operators,dc=nato,dc=int"
+subject_id = "gbr-allied-analyst"
+clearance = "SECRET"
+nationality = "GBR"
+
+[[entries]]
+principal = "uid=deu-analyst,ou=DEU,ou=operators,dc=nato,dc=int"
+subject_id = "deu-analyst"
+clearance = "SECRET"
+nationality = "DEU"
+
+[[entries]]
+principal = "uid=usa-analyst,ou=USA,ou=operators,dc=nato,dc=int"
+subject_id = "usa-analyst"
+clearance = "SECRET"
+nationality = "USA"
+
+[[entries]]
+principal = "uid=gbr-analyst,ou=GBR,ou=operators,dc=nato,dc=int"
+subject_id = "gbr-analyst"
+clearance = "SECRET"
+nationality = "GBR"
+
+[[entries]]
+principal = "uid=usa-restricted-analyst,ou=USA,ou=operators,dc=nato,dc=int"
+subject_id = "usa-restricted-analyst"
+clearance = "RESTRICTED"
+nationality = "USA"
+
+[[entries]]
+principal = "uid=gbr-restricted-analyst,ou=GBR,ou=operators,dc=nato,dc=int"
+subject_id = "gbr-restricted-analyst"
+clearance = "RESTRICTED"
+nationality = "GBR"

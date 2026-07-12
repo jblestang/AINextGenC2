@@ -32,7 +32,7 @@ mod ring_backend;
 mod fips_backend;
 
 pub use error::{CryptoError, CryptoResult};
-pub use hash::{sha256, sha256_base64};
+pub use hash::{sha256, sha256_base64, sha256_hex};
 pub use keys::{conformance_keypair, KeyPair, PublicKey, SigningKey, VerifyingKey};
 pub use pki::{NmbKeyRing, NmbTrustStore};
 pub use runtime_pki::{

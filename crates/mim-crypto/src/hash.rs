@@ -11,3 +11,11 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
 pub fn sha256_base64(data: &[u8]) -> String {
     STANDARD.encode(sha256(data))
 }
+
+/// Lowercase hex-encoded SHA-256 digest (certificate fingerprint format).
+pub fn sha256_hex(data: &[u8]) -> String {
+    sha256(data)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
